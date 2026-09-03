@@ -21,5 +21,6 @@ export 'src/models/scale_reading.dart';
 export 'src/models/sync_payload.dart';
 export 'src/scale/weight_parser.dart';
 export 'src/api/api_client.dart';
+export 'src/api/payroll_api.dart';
 export 'src/api/live_scale_client.dart';
 export 'src/api/api_exception.dart';

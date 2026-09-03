@@ -241,6 +241,21 @@ class ApiClient {
   Future<SyncPayload> syncPush(SyncPayload payload) async =>
       SyncPayload.fromJson(await _postMap('/api/sync/push', payload.toJson()));
 
+  // ------------------------------------- lối vào cho các nhóm API tách file
+
+  /// Bốn hàm dưới đây mở ra để phần API của module khác (ví dụ chấm công) viết
+  /// được ở file riêng dưới dạng extension, thay vì dồn hết vào lớp này.
+  Future<Map<String, Object?>> getMap(String path, [Map<String, String>? query]) =>
+      _getMap(path, query);
+
+  Future<List<Map<String, Object?>>> getList(String path, [Map<String, String>? query]) =>
+      _getList(path, query);
+
+  Future<Map<String, Object?>> postMap(String path, Map<String, Object?> payload) =>
+      _postMap(path, payload);
+
+  Future<void> deletePath(String path) => _delete(path);
+
   // -------------------------------------------------------------------- nội bộ
 
   Uri _uri(String path, [Map<String, String>? query]) => _build(path, query);

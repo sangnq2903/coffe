@@ -13,6 +13,7 @@ export 'src/logging.dart';
 export 'src/scale/scale_service.dart';
 export 'src/scale/win32_serial.dart' show listSerialPorts, SerialPortException, Win32SerialPort;
 export 'src/server_app.dart';
+export 'src/service/payroll_service.dart';
 export 'src/service/ticket_service.dart';
 export 'src/sync/station_uplink.dart';
 export 'src/sync/sync_worker.dart';

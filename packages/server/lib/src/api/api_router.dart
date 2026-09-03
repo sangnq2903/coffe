@@ -12,7 +12,9 @@ import '../config.dart';
 import '../db/repository.dart';
 import '../scale/scale_service.dart';
 import '../scale/win32_serial.dart';
+import '../service/payroll_service.dart';
 import '../service/ticket_service.dart';
+import 'payroll_router.dart';
 import '../sync/sync_worker.dart';
 import 'reading_broker.dart';
 
@@ -25,6 +27,7 @@ class ApiRouter {
     required this.repo,
     required this.broker,
     required this.tickets,
+    required this.payroll,
     required this.auth,
     this.scale,
     this.sync,
@@ -34,6 +37,7 @@ class ApiRouter {
   final Repository repo;
   final ReadingBroker broker;
   final TicketService tickets;
+  final PayrollService payroll;
   final AuthService auth;
 
   /// Chỉ có ở vai trò trạm cân.
@@ -435,6 +439,19 @@ class ApiRouter {
     });
 
     // ---------------------------------------------------------- WebSocket
+    // Module chấm công đăng ký đường dẫn của nó vào cùng router này.
+    PayrollRouter(
+      repo: repo.payroll,
+      service: payroll,
+      json: _json,
+      error: _error,
+      guard: _guard,
+      body: _body,
+      user: _user,
+      scope: _scope,
+      requireStation: _requireStation,
+    ).attach(router);
+
     router.get('/ws/scale', _scaleSocketHandler());
     if (config.isCentral) {
       router.get('/ws/station', _stationUplinkHandler());

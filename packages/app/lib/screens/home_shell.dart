@@ -7,6 +7,7 @@ import '../state/live_weight_controller.dart';
 import '../widgets/station_picker.dart';
 import 'account_screen.dart';
 import 'catalog_screen.dart';
+import 'payroll/crews_screen.dart';
 import 'settings_screen.dart';
 import 'tickets_screen.dart';
 import 'weigh_screen.dart';
@@ -26,6 +27,7 @@ class _HomeShellState extends State<HomeShell> {
   static const _destinations = [
     (icon: Icons.scale, label: 'Cân xe'),
     (icon: Icons.receipt_long, label: 'Phiếu cân'),
+    (icon: Icons.fact_check, label: 'Chấm công'),
     (icon: Icons.folder_shared, label: 'Danh mục'),
     (icon: Icons.settings, label: 'Cài đặt'),
     (icon: Icons.account_circle, label: 'Cá nhân'),
@@ -50,6 +52,7 @@ class _HomeShellState extends State<HomeShell> {
     const pages = [
       WeighScreen(),
       TicketsScreen(),
+      CrewsScreen(),
       CatalogScreen(),
       SettingsScreen(),
       AccountScreen(),
