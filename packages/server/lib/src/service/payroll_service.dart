@@ -899,6 +899,320 @@ class PayrollService {
     return moneySheet(crewId, entry.workerId);
   }
 
+  // ============================================================== báo cáo
+
+  /// Bảng lương một tháng của cả đoàn — bảng để đối chiếu và trả tiền.
+  ///
+  /// Kèm phần chia theo kho: mỗi ngày chấm công đã ghi kho tại thời điểm đó,
+  /// nên cộng ra được tiền công mà từng kho phải gánh dù người chuyển kho qua
+  /// lại giữa mùa.
+  Map<String, Object?> monthReport(String crewId, int year, int month) {
+    final crew = _requireCrew(crewId);
+    if (month < 1 || month > 12) {
+      throw BusinessException('Tháng phải từ 1 tới 12.');
+    }
+    final monthKey = '$year-${month.toString().padLeft(2, '0')}';
+
+    final rows = <Map<String, Object?>>[];
+    final theoKho = <String, double>{};
+    var tongCong = 0.0;
+    var tongLuong = 0.0;
+    var tongTangCa = 0.0;
+    var tongPhuCap = 0.0;
+    var tongTruTien = 0.0;
+    var tongThuNhap = 0.0;
+    var tongUng = 0.0;
+
+    for (final worker in _repo.workers(crewId)) {
+      final attendances = _repo.attendances(crewId: crewId, workerId: worker.id);
+      final entries = _repo.entries(crewId: crewId, workerId: worker.id);
+      final m = PayrollCalculator.monthly(
+        monthKey: monthKey,
+        attendances: attendances,
+        entries: entries,
+      );
+      // Người không có công cũng không có khoản nào trong tháng thì bỏ khỏi
+      // bảng, chứ để dòng toàn số 0 chỉ làm bảng dài ra.
+      if (m.workUnits == 0 && m.overtime == 0 && m.allowance == 0 &&
+          m.deduction == 0 && m.advanced == 0) {
+        continue;
+      }
+
+      final ofMonth =
+          attendances.where((a) => !a.deleted && a.monthKey == monthKey).toList();
+      final phanKho = _splitByStation(ofMonth, m.wageEarned);
+      phanKho.forEach((kho, tien) => theoKho[kho] = (theoKho[kho] ?? 0) + tien);
+
+      tongCong += m.workUnits;
+      tongLuong += m.wageEarned;
+      tongTangCa += m.overtime;
+      tongPhuCap += m.allowance;
+      tongTruTien += m.deduction;
+      tongThuNhap += m.income;
+      tongUng += m.advanced;
+
+      rows.add({
+        'worker_id': worker.id,
+        'name': worker.name,
+        'station_code': worker.stationCode,
+        'status': worker.status.value,
+        ..._monthJson(m),
+        'by_station': phanKho,
+        // Còn lại của riêng tháng này, không tính nợ dồn các tháng khác.
+        'remaining': PayrollCalculator.roundMoney(m.income - m.advanced),
+      });
+    }
+
+    return {
+      'crew_name': crew.name,
+      'month_key': monthKey,
+      'year': year,
+      'month': month,
+      'days_in_month': Attendance.daysInMonthOf(DateTime(year, month, 1)),
+      'rows': rows,
+      'by_station': {
+        for (final e in theoKho.entries) e.key: PayrollCalculator.roundMoney(e.value),
+      },
+      'total_work_units': tongCong,
+      'total_wage': PayrollCalculator.roundMoney(tongLuong),
+      'total_overtime': PayrollCalculator.roundMoney(tongTangCa),
+      'total_allowance': PayrollCalculator.roundMoney(tongPhuCap),
+      'total_deduction': PayrollCalculator.roundMoney(tongTruTien),
+      'total_income': PayrollCalculator.roundMoney(tongThuNhap),
+      'total_advanced': PayrollCalculator.roundMoney(tongUng),
+      'total_remaining': PayrollCalculator.roundMoney(tongThuNhap - tongUng),
+    };
+  }
+
+  /// Chia tiền lương của một tháng cho các kho theo số công làm ở từng kho.
+  ///
+  /// Chia theo tỷ lệ công thay vì cộng tiền từng ngày: lương tháng chia cho số
+  /// ngày ra số lẻ vô hạn, cộng dồn từng ngày thì tổng các kho không khớp tổng
+  /// lương của người đó — mà bảng nào cũng phải khớp mới đối chiếu được.
+  Map<String, double> _splitByStation(List<Attendance> ofMonth, double wage) {
+    final units = <String, double>{};
+    var total = 0.0;
+    for (final a in ofMonth) {
+      final unit = a.workUnit;
+      if (unit <= 0) continue;
+      final kho = a.stationCode ?? '(chưa gán kho)';
+      units[kho] = (units[kho] ?? 0) + unit;
+      total += unit;
+    }
+    if (total <= 0) return const {};
+    return {
+      for (final e in units.entries)
+        e.key: PayrollCalculator.roundMoney(wage * e.value / total),
+    };
+  }
+
+  /// Báo cáo cả mùa: mỗi người một dòng, gộp mọi tháng.
+  Map<String, Object?> seasonReport(String crewId) {
+    final crew = _requireCrew(crewId);
+
+    final rows = <Map<String, Object?>>[];
+    final theoKho = <String, double>{};
+    final thangs = <String>{};
+    var tongCong = 0.0;
+    var tongThuNhap = 0.0;
+    var tongUng = 0.0;
+    var tongTra = 0.0;
+    var soAm = 0;
+    var soChuaTra = 0;
+
+    for (final worker in _repo.workers(crewId)) {
+      final attendances = _repo.attendances(crewId: crewId, workerId: worker.id);
+      final entries = _repo.entries(crewId: crewId, workerId: worker.id);
+      if (attendances.isEmpty && entries.isEmpty) continue;
+
+      final months = <String>{
+        ...attendances.where((a) => !a.deleted).map((a) => a.monthKey),
+        ...entries.map((e) => e.monthKey),
+      };
+      thangs.addAll(months);
+
+      var cong = 0.0;
+      var luong = 0.0;
+      for (final key in months) {
+        final m = PayrollCalculator.monthly(
+          monthKey: key,
+          attendances: attendances,
+          entries: entries,
+        );
+        cong += m.workUnits;
+        luong += m.wageEarned;
+
+        final ofMonth =
+            attendances.where((a) => !a.deleted && a.monthKey == key).toList();
+        _splitByStation(ofMonth, m.wageEarned)
+            .forEach((kho, tien) => theoKho[kho] = (theoKho[kho] ?? 0) + tien);
+      }
+
+      final balance = PayrollCalculator.balance(
+        attendances: attendances,
+        entries: entries,
+      );
+      double sum(PayrollEntryType type) => entries
+          .where((e) => e.type == type)
+          .fold<double>(0, (t, e) => t + e.amount);
+
+      tongCong += cong;
+      tongThuNhap += balance.totalEarned;
+      tongUng += balance.totalAdvanced;
+      tongTra += balance.totalPaid;
+      if (balance.isNegative) soAm++;
+      if (balance.balance > 0) soChuaTra++;
+
+      rows.add({
+        'worker_id': worker.id,
+        'name': worker.name,
+        'station_code': worker.stationCode,
+        'status': worker.status.value,
+        'months': months.length,
+        'work_units': cong,
+        'wage_earned': PayrollCalculator.roundMoney(luong),
+        'overtime': sum(PayrollEntryType.tangCa),
+        'allowance': sum(PayrollEntryType.phuCap),
+        'deduction': sum(PayrollEntryType.truTien),
+        'balance': _balanceJson(balance),
+        'settled': sum(PayrollEntryType.thanhToan) > 0,
+      });
+    }
+
+    final sortedMonths = thangs.toList()..sort();
+    return {
+      'crew_name': crew.name,
+      'crew_status': crew.status.value,
+      'season': crew.season,
+      'months': sortedMonths,
+      'rows': rows,
+      'by_station': {
+        for (final e in theoKho.entries) e.key: PayrollCalculator.roundMoney(e.value),
+      },
+      'total_work_units': tongCong,
+      'total_earned': PayrollCalculator.roundMoney(tongThuNhap),
+      'total_advanced': PayrollCalculator.roundMoney(tongUng),
+      'total_paid': PayrollCalculator.roundMoney(tongTra),
+      'total_balance': PayrollCalculator.roundMoney(tongThuNhap - tongUng - tongTra),
+      'negative_count': soAm,
+      // Còn bao nhiêu người chưa nhận hết — đây là con số để biết mùa đã xong
+      // hay chưa, chứ không phải trạng thái của đoàn.
+      'unpaid_count': soChuaTra,
+    };
+  }
+
+  // ========================================================= quyết toán mùa
+
+  /// Chốt mùa: đóng đoàn lại để chuyển sang bước quyết toán.
+  ///
+  /// Không tự trả tiền — chỉ mở cửa cho việc thanh toán, vì trong mùa thì chỉ
+  /// được ứng. Trả về những gì còn lại phải trả để biết còn nợ ai bao nhiêu.
+  Map<String, Object?> closeSeason(String crewId, {DateTime? endDate}) {
+    final crew = _requireCrew(crewId);
+    if (crew.status == CrewStatus.daHoanThanh) {
+      throw BusinessException('Đoàn "${crew.name}" đã chốt mùa rồi.');
+    }
+    _repo.upsertCrew(crew.copyWith(
+      status: CrewStatus.daHoanThanh,
+      endDate: endDate ?? DateTime.now(),
+    ));
+    return seasonReport(crewId);
+  }
+
+  /// Mở lại mùa đã chốt, cho trường hợp chốt sớm do bấm nhầm.
+  Map<String, Object?> reopenSeason(String crewId) {
+    final crew = _requireCrew(crewId);
+    if (crew.status != CrewStatus.daHoanThanh) {
+      throw BusinessException('Đoàn "${crew.name}" đang diễn ra, không cần mở lại.');
+    }
+    _repo.upsertCrew(crew.copyWith(status: CrewStatus.dangDienRa));
+    return seasonReport(crewId);
+  }
+
+  /// Quyết toán: trả hết phần còn lại cho những người được chọn.
+  ///
+  /// Ghi đúng số còn phải trả của từng người, không nhận số tự nhập — quyết
+  /// toán là phép trừ, gõ tay chỉ thêm chỗ sai. Ai số dư không dương thì bỏ
+  /// qua kèm lý do chứ không ghi khoản 0 đồng.
+  Map<String, Object?> settleSeason({
+    required String crewId,
+    List<String>? workerIds,
+    DateTime? date,
+    String? createdBy,
+  }) {
+    final crew = _requireCrew(crewId);
+    if (crew.status != CrewStatus.daHoanThanh) {
+      throw BusinessException(
+        'Trong mùa chỉ ứng lương; quyết toán một lần vào cuối mùa. '
+        'Bấm "Chốt mùa" cho đoàn "${crew.name}" trước đã.',
+      );
+    }
+
+    // Quyết toán cả đoàn thì chỉ xét người có công hoặc có khoản tiền — người
+    // chưa từng đi làm mà cũng báo "đã nhận đủ" chỉ làm loãng danh sách bỏ qua.
+    // Còn chỉ định thẳng ai thì cứ xét người đó và nói rõ vì sao bỏ qua.
+    final targets = workerIds == null || workerIds.isEmpty
+        ? _repo
+            .workers(crewId)
+            .where((w) =>
+                _repo.attendances(crewId: crewId, workerId: w.id).isNotEmpty ||
+                _repo.entries(crewId: crewId, workerId: w.id).isNotEmpty)
+            .map((w) => w.id)
+            .toList()
+        : workerIds;
+
+    final paid = <Map<String, Object?>>[];
+    final skipped = <Map<String, Object?>>[];
+    var tong = 0.0;
+
+    for (final id in targets) {
+      final worker = _requireWorker(crewId, id);
+      final entries = _repo.entries(crewId: crewId, workerId: id);
+      final balance = PayrollCalculator.balance(
+        attendances: _repo.attendances(crewId: crewId, workerId: id),
+        entries: entries,
+      );
+
+      if (balance.balance <= 0) {
+        skipped.add({
+          'worker_id': id,
+          'name': worker.name,
+          'balance': balance.balance,
+          'reason': balance.isNegative
+              ? 'đã nhận vượt ${PayrollCalculator.money(balance.balance.abs())}, '
+                  'phải thu lại chứ không trả thêm'
+              : 'đã nhận đủ, không còn gì để trả',
+        });
+        continue;
+      }
+
+      final entry = _repo.upsertEntry(PayrollEntry.create(
+        crewId: crewId,
+        workerId: id,
+        type: PayrollEntryType.thanhToan,
+        amount: balance.balance,
+        date: date ?? DateTime.now(),
+        note: 'Quyết toán cuối mùa',
+        createdBy: createdBy,
+      ));
+      tong += entry.amount;
+      paid.add({
+        'worker_id': id,
+        'name': worker.name,
+        'amount': entry.amount,
+        'entry_id': entry.id,
+      });
+    }
+
+    return {
+      'paid': paid,
+      'skipped': skipped,
+      'paid_count': paid.length,
+      'total_paid': PayrollCalculator.roundMoney(tong),
+      'report': seasonReport(crewId),
+    };
+  }
+
   Map<String, Object?> _monthJson(MonthlyPayroll m) => {
         'month_key': m.monthKey,
         'days_worked': m.daysWorked,

@@ -201,6 +201,53 @@ class PayrollRouter {
               return json(service.deleteEntry(id, entryId));
             }));
 
+    // ------------------------------------------- báo cáo và quyết toán mùa
+    router.get('/api/doan/<id>/bao-cao/thang', (Request request, String id) => guard(() {
+          if (_crewOr404(id) == null) return error('Không tìm thấy đoàn.', 404);
+          final q = request.url.queryParameters;
+          final now = DateTime.now();
+          return json(service.monthReport(
+            id,
+            asInt(q['year'], fallback: now.year),
+            asInt(q['month'], fallback: now.month),
+          ));
+        }));
+
+    router.get('/api/doan/<id>/bao-cao/mua', (Request request, String id) => guard(() {
+          if (_crewOr404(id) == null) return error('Không tìm thấy đoàn.', 404);
+          return json(service.seasonReport(id));
+        }));
+
+    // Chốt mùa chỉ đóng đoàn để mở cửa cho quyết toán, không tự trả tiền.
+    router.post('/api/doan/<id>/chot-mua', (Request request, String id) async {
+      final data = await body(request);
+      return guard(() {
+        if (_crewOr404(id) == null) return error('Không tìm thấy đoàn.', 404);
+        return json(service.closeSeason(id, endDate: asTimeOrNull(data['end_date'])));
+      });
+    });
+
+    router.post('/api/doan/<id>/mo-lai-mua',
+        (Request request, String id) => guard(() {
+              if (_crewOr404(id) == null) return error('Không tìm thấy đoàn.', 404);
+              return json(service.reopenSeason(id));
+            }));
+
+    router.post('/api/doan/<id>/quyet-toan', (Request request, String id) async {
+      final data = await body(request);
+      return guard(() {
+        if (_crewOr404(id) == null) return error('Không tìm thấy đoàn.', 404);
+        // Không truyền danh sách nghĩa là quyết toán cho cả đoàn.
+        final ids = (data['worker_ids'] as List?)?.map((e) => e.toString()).toList();
+        return json(service.settleSeason(
+          crewId: id,
+          workerIds: ids,
+          date: asTimeOrNull(data['date']),
+          createdBy: user(request).username,
+        ));
+      });
+    });
+
     router.post('/api/nhan-vien/<workerId>/nghi-lam',
         (Request request, String workerId) async {
       final data = await body(request);

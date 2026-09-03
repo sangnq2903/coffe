@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../state/server_connection.dart';
 import 'attendance_tab.dart';
 import 'money_tab.dart';
+import 'report_tab.dart';
 
 /// Chi tiết một đoàn: chấm công, bảng tháng, nhân viên và cấu hình lương.
 ///
@@ -23,6 +24,12 @@ class CrewDetailScreen extends StatefulWidget {
 }
 
 class _CrewDetailScreenState extends State<CrewDetailScreen> {
+  /// Bản đoàn đang hiển thị.
+  ///
+  /// Chốt mùa đổi trạng thái đoàn, mà nút thanh toán ở tab Tiền lại phụ thuộc
+  /// trạng thái đó — giữ bản riêng để chốt xong là các tab thấy ngay.
+  late Crew _crew = widget.crew;
+
   WageTable _wage = const WageTable();
   List<Worker> _dangLam = const [];
   List<Worker> _daNghi = const [];
@@ -61,6 +68,17 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
     }
   }
 
+  Future<void> _reloadCrew() async {
+    final client = _client;
+    if (client == null) return;
+    try {
+      final crew = await client.crew(_crew.id);
+      if (mounted) setState(() => _crew = crew);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
+  }
+
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -78,10 +96,10 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(widget.crew.displayName),
+          title: Text(_crew.displayName),
           bottom: const TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
@@ -89,6 +107,7 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
               Tab(icon: Icon(Icons.how_to_reg), text: 'Chấm công'),
               Tab(icon: Icon(Icons.table_chart), text: 'Bảng tháng'),
               Tab(icon: Icon(Icons.payments), text: 'Tiền'),
+              Tab(icon: Icon(Icons.assignment), text: 'Báo cáo'),
               Tab(icon: Icon(Icons.people), text: 'Nhân viên'),
               Tab(icon: Icon(Icons.tune), text: 'Cấu hình lương'),
             ],
@@ -114,7 +133,8 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
                 children: [
                   AttendanceDayTab(crewId: widget.crew.id),
                   AttendanceMonthTab(crewId: widget.crew.id),
-                  MoneyTab(crew: widget.crew),
+                  MoneyTab(crew: _crew),
+                  ReportTab(crew: _crew, onCrewChanged: _reloadCrew),
                   _workersTab(),
                   _configTab(),
                 ],

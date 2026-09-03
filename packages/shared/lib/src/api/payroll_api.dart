@@ -495,6 +495,263 @@ class AdvancePreview {
   final double suggested;
 }
 
+/// Bảng lương một tháng của cả đoàn.
+class MonthReport {
+  const MonthReport({
+    this.crewName = '',
+    this.monthKey = '',
+    this.year = 0,
+    this.month = 0,
+    this.rows = const [],
+    this.byStation = const {},
+    this.totalWorkUnits = 0,
+    this.totalWage = 0,
+    this.totalOvertime = 0,
+    this.totalAllowance = 0,
+    this.totalDeduction = 0,
+    this.totalIncome = 0,
+    this.totalAdvanced = 0,
+    this.totalRemaining = 0,
+  });
+
+  factory MonthReport.fromJson(Map<String, Object?> json) => MonthReport(
+        crewName: asString(json['crew_name']),
+        monthKey: asString(json['month_key']),
+        year: asInt(json['year']),
+        month: asInt(json['month']),
+        rows: asMapList(json['rows']).map(MonthReportRow.fromJson).toList(),
+        byStation: _money(json['by_station']),
+        totalWorkUnits: asDouble(json['total_work_units']),
+        totalWage: asDouble(json['total_wage']),
+        totalOvertime: asDouble(json['total_overtime']),
+        totalAllowance: asDouble(json['total_allowance']),
+        totalDeduction: asDouble(json['total_deduction']),
+        totalIncome: asDouble(json['total_income']),
+        totalAdvanced: asDouble(json['total_advanced']),
+        totalRemaining: asDouble(json['total_remaining']),
+      );
+
+  final String crewName;
+  final String monthKey;
+  final int year;
+  final int month;
+  final List<MonthReportRow> rows;
+
+  /// Tiền công mà từng kho phải gánh trong tháng.
+  final Map<String, double> byStation;
+
+  final double totalWorkUnits;
+  final double totalWage;
+  final double totalOvertime;
+  final double totalAllowance;
+  final double totalDeduction;
+  final double totalIncome;
+  final double totalAdvanced;
+  final double totalRemaining;
+}
+
+/// Một người trong bảng lương tháng.
+class MonthReportRow {
+  const MonthReportRow({
+    required this.workerId,
+    required this.name,
+    this.stationCode,
+    required this.month,
+    this.byStation = const {},
+    this.remaining = 0,
+  });
+
+  factory MonthReportRow.fromJson(Map<String, Object?> json) => MonthReportRow(
+        workerId: asString(json['worker_id']),
+        name: asString(json['name']),
+        stationCode: asStringOrNull(json['station_code']),
+        month: monthlyPayrollFromJson(json),
+        byStation: _money(json['by_station']),
+        remaining: asDouble(json['remaining']),
+      );
+
+  final String workerId;
+  final String name;
+  final String? stationCode;
+
+  /// Số liệu của tháng, dùng lại đúng lớp trong công thức lương.
+  final MonthlyPayroll month;
+
+  final Map<String, double> byStation;
+
+  /// Còn lại của riêng tháng này (thu nhập − đã ứng), chưa tính nợ dồn.
+  final double remaining;
+}
+
+/// Báo cáo cả mùa, gộp mọi tháng.
+class SeasonReport {
+  const SeasonReport({
+    this.crewName = '',
+    this.crewStatus = CrewStatus.dangDienRa,
+    this.season = '',
+    this.months = const [],
+    this.rows = const [],
+    this.byStation = const {},
+    this.totalWorkUnits = 0,
+    this.totalEarned = 0,
+    this.totalAdvanced = 0,
+    this.totalPaid = 0,
+    this.totalBalance = 0,
+    this.negativeCount = 0,
+    this.unpaidCount = 0,
+  });
+
+  factory SeasonReport.fromJson(Map<String, Object?> json) => SeasonReport(
+        crewName: asString(json['crew_name']),
+        crewStatus: CrewStatus.parse(json['crew_status']),
+        season: asString(json['season']),
+        months: (json['months'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        rows: asMapList(json['rows']).map(SeasonReportRow.fromJson).toList(),
+        byStation: _money(json['by_station']),
+        totalWorkUnits: asDouble(json['total_work_units']),
+        totalEarned: asDouble(json['total_earned']),
+        totalAdvanced: asDouble(json['total_advanced']),
+        totalPaid: asDouble(json['total_paid']),
+        totalBalance: asDouble(json['total_balance']),
+        negativeCount: asInt(json['negative_count']),
+        unpaidCount: asInt(json['unpaid_count']),
+      );
+
+  final String crewName;
+  final CrewStatus crewStatus;
+  final String season;
+
+  /// Các tháng có số liệu, dạng `2026-09`.
+  final List<String> months;
+
+  final List<SeasonReportRow> rows;
+  final Map<String, double> byStation;
+  final double totalWorkUnits;
+  final double totalEarned;
+  final double totalAdvanced;
+  final double totalPaid;
+  final double totalBalance;
+
+  /// Số người đã nhận vượt công đã làm.
+  final int negativeCount;
+
+  /// Số người còn chưa nhận hết — mùa xong hay chưa nhìn con số này.
+  final int unpaidCount;
+
+  bool get isClosed => crewStatus == CrewStatus.daHoanThanh;
+}
+
+/// Một người trong báo cáo mùa.
+class SeasonReportRow {
+  const SeasonReportRow({
+    required this.workerId,
+    required this.name,
+    this.stationCode,
+    this.months = 0,
+    this.workUnits = 0,
+    this.wageEarned = 0,
+    this.overtime = 0,
+    this.allowance = 0,
+    this.deduction = 0,
+    required this.balance,
+    this.settled = false,
+  });
+
+  factory SeasonReportRow.fromJson(Map<String, Object?> json) => SeasonReportRow(
+        workerId: asString(json['worker_id']),
+        name: asString(json['name']),
+        stationCode: asStringOrNull(json['station_code']),
+        months: asInt(json['months']),
+        workUnits: asDouble(json['work_units']),
+        wageEarned: asDouble(json['wage_earned']),
+        overtime: asDouble(json['overtime']),
+        allowance: asDouble(json['allowance']),
+        deduction: asDouble(json['deduction']),
+        balance: workerBalanceFromJson(json['balance']),
+        settled: asBool(json['settled']),
+      );
+
+  final String workerId;
+  final String name;
+  final String? stationCode;
+
+  /// Số tháng có số liệu.
+  final int months;
+
+  final double workUnits;
+  final double wageEarned;
+  final double overtime;
+  final double allowance;
+  final double deduction;
+  final WorkerBalance balance;
+
+  /// Đã có khoản thanh toán quyết toán.
+  final bool settled;
+}
+
+/// Kết quả một lần quyết toán.
+class SettleResult {
+  const SettleResult({
+    this.paid = const [],
+    this.skipped = const [],
+    this.paidCount = 0,
+    this.totalPaid = 0,
+    required this.report,
+  });
+
+  factory SettleResult.fromJson(Map<String, Object?> json) => SettleResult(
+        paid: asMapList(json['paid'])
+            .map((e) => SettleLine(
+                  workerId: asString(e['worker_id']),
+                  name: asString(e['name']),
+                  amount: asDouble(e['amount']),
+                ))
+            .toList(),
+        skipped: asMapList(json['skipped'])
+            .map((e) => SettleLine(
+                  workerId: asString(e['worker_id']),
+                  name: asString(e['name']),
+                  amount: asDouble(e['balance']),
+                  reason: asStringOrNull(e['reason']),
+                ))
+            .toList(),
+        paidCount: asInt(json['paid_count']),
+        totalPaid: asDouble(json['total_paid']),
+        report: SeasonReport.fromJson(
+            (json['report'] as Map?)?.cast<String, Object?>() ?? const {}),
+      );
+
+  final List<SettleLine> paid;
+
+  /// Người bị bỏ qua kèm lý do: đã nhận đủ, hoặc đã nhận vượt phải thu lại.
+  final List<SettleLine> skipped;
+
+  final int paidCount;
+  final double totalPaid;
+  final SeasonReport report;
+}
+
+/// Một dòng trong kết quả quyết toán.
+class SettleLine {
+  const SettleLine({
+    required this.workerId,
+    required this.name,
+    required this.amount,
+    this.reason,
+  });
+
+  final String workerId;
+  final String name;
+  final double amount;
+  final String? reason;
+}
+
+Map<String, double> _money(Object? raw) => raw is Map
+    ? {for (final e in raw.entries) e.key.toString(): asDouble(e.value)}
+    : const {};
+
 /// Đọc [MonthlyPayroll] từ JSON của máy chủ.
 ///
 /// Dùng lại đúng lớp trong công thức lương thay vì tạo lớp riêng cho client:
@@ -763,4 +1020,36 @@ extension PayrollApi on ApiClient {
   Future<MoneySheet> deleteEntry(String crewId, String entryId) async =>
       MoneySheet.fromJson(
           await deleteMap('/api/doan/$crewId/so-tien/$entryId'));
+
+  // ---------------------------------------------- báo cáo và quyết toán mùa
+
+  Future<MonthReport> monthReport(String crewId,
+          {required int year, required int month}) async =>
+      MonthReport.fromJson(await getMap('/api/doan/$crewId/bao-cao/thang', {
+        'year': '$year',
+        'month': '$month',
+      }));
+
+  Future<SeasonReport> seasonReport(String crewId) async =>
+      SeasonReport.fromJson(await getMap('/api/doan/$crewId/bao-cao/mua'));
+
+  /// Chốt mùa: đóng đoàn để mở cửa cho quyết toán. Không tự trả tiền.
+  Future<SeasonReport> closeSeason(String crewId, {DateTime? endDate}) async =>
+      SeasonReport.fromJson(await postMap('/api/doan/$crewId/chot-mua', {
+        'end_date': timeToMillisOrNull(endDate),
+      }));
+
+  Future<SeasonReport> reopenSeason(String crewId) async =>
+      SeasonReport.fromJson(await postMap('/api/doan/$crewId/mo-lai-mua', const {}));
+
+  /// Quyết toán: trả hết phần còn lại. Bỏ trống [workerIds] là cho cả đoàn.
+  Future<SettleResult> settleSeason(
+    String crewId, {
+    List<String>? workerIds,
+    DateTime? date,
+  }) async =>
+      SettleResult.fromJson(await postMap('/api/doan/$crewId/quyet-toan', {
+        if (workerIds != null) 'worker_ids': workerIds,
+        'date': timeToMillisOrNull(date),
+      }));
 }

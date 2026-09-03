@@ -391,6 +391,29 @@ kèm từng người với trần ứng và số còn được ứng của thán
 - Sửa một khoản ứng **không bị đếm tiền cũ hai lần**: kiểm tra trần loại chính
   khoản đang sửa ra khỏi phép tính
 
+### Báo cáo và quyết toán cuối mùa
+
+Tab **Báo cáo** có hai bảng, cả hai **in được ra giấy** (PDF A4, có ô ký) — bảng
+lương là thứ đưa cho người ta xem rồi ký nhận, xem trên màn hình thôi chưa dùng
+được.
+
+- **Bảng lương tháng**: mỗi người một dòng — công, lương, tăng ca, phụ cấp, trừ
+  tiền, thu nhập, đã ứng, còn lại — kèm dòng tổng
+- **Quyết toán mùa**: gộp mọi tháng, cột còn lại và trạng thái từng người (chưa
+  trả / đã quyết toán / đã nhận đủ / nhận vượt)
+- **Tiền công theo kho**: chia theo **số công làm ở từng kho**, nên người chuyển
+  kho giữa mùa vẫn tách được và tổng các kho luôn khớp tổng lương. Đây là chỗ
+  cái quyết định "mỗi ngày chấm công ghi kèm kho" trả lãi
+
+Luồng cuối mùa:
+
+1. **Chốt mùa** — chỉ đóng đoàn để mở cửa cho quyết toán, *không* tự trả tiền.
+   Chốt rồi không ứng lương được nữa; bấm nhầm thì **mở lại mùa** được
+2. **Quyết toán** — ghi khoản thanh toán bằng **đúng số còn phải trả** của từng
+   người, không nhận số tự nhập: quyết toán là phép trừ, gõ tay chỉ thêm chỗ sai
+3. Ai **đã nhận vượt** thì bị bỏ qua kèm lý do "phải thu lại chứ không trả thêm";
+   ai đã nhận đủ cũng bỏ qua thay vì ghi khoản 0 đồng
+
 ### Hai điều dễ làm sai
 
 **Sửa bảng giá không được làm đổi lương đã tính.** Mỗi ngày chấm công lưu kèm
