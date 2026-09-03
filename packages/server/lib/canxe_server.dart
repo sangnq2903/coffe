@@ -7,6 +7,7 @@ export 'src/auth/auth_service.dart';
 export 'src/config.dart';
 export 'src/console.dart';
 export 'src/db/database.dart';
+export 'src/db/payroll_repository.dart';
 export 'src/db/repository.dart';
 export 'src/logging.dart';
 export 'src/scale/scale_service.dart';

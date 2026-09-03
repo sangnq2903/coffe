@@ -75,6 +75,154 @@ class AppDatabase {
       _createV2();
       db.execute('PRAGMA user_version = 2;');
     }
+    if (version < 3) {
+      _createV3();
+      db.execute('PRAGMA user_version = 3;');
+    }
+  }
+
+  /// Phiên bản 3: module chấm công và tính lương mùa vụ.
+  ///
+  /// Mọi bảng đều gắn với một đoàn, và đoàn thì thuộc về một kho — nhờ vậy phân
+  /// quyền theo kho của phần cân xe dùng lại được nguyên vẹn cho phần này.
+  void _createV3() {
+    // Đoàn = một mùa vụ tại một kho. Mỗi mùa lập đoàn mới với danh sách người
+    // riêng; một người chỉ thuộc một đoàn.
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS doan (
+        id           TEXT PRIMARY KEY,
+        name         TEXT NOT NULL,
+        station_code TEXT NOT NULL,
+        season       TEXT NOT NULL DEFAULT '',
+        start_date   INTEGER,
+        end_date     INTEGER,
+        status       TEXT NOT NULL DEFAULT 'dang_dien_ra',
+        note         TEXT,
+        updated_at   INTEGER NOT NULL,
+        deleted      INTEGER NOT NULL DEFAULT 0,
+        dirty        INTEGER NOT NULL DEFAULT 1
+      );
+    ''');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_doan_kho ON doan(station_code);');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_doan_updated ON doan(updated_at);');
+
+    // Giai đoạn lương: đầu mùa, mùa rộ. Mốc chuyển khai bằng ngày nên một tháng
+    // vắt qua hai giai đoạn vẫn tính đúng.
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS giai_doan_luong (
+        id         TEXT PRIMARY KEY,
+        crew_id    TEXT NOT NULL,
+        name       TEXT NOT NULL,
+        from_date  INTEGER NOT NULL,
+        to_date    INTEGER,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        deleted    INTEGER NOT NULL DEFAULT 0,
+        dirty      INTEGER NOT NULL DEFAULT 1
+      );
+    ''');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_giai_doan_doan ON giai_doan_luong(crew_id);');
+
+    // Mức lương dùng chung, ví dụ "Thợ chính". Nhiều người hưởng cùng một mức.
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS muc_luong (
+        id         TEXT PRIMARY KEY,
+        crew_id    TEXT NOT NULL,
+        name       TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        deleted    INTEGER NOT NULL DEFAULT 0,
+        dirty      INTEGER NOT NULL DEFAULT 1
+      );
+    ''');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_muc_luong_doan ON muc_luong(crew_id);');
+
+    // Tiền một tháng của (mức lương × giai đoạn). Đặt riêng cho một người thì
+    // worker_id có giá trị và band_id để trống.
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS gia_luong (
+        id             TEXT PRIMARY KEY,
+        crew_id        TEXT NOT NULL,
+        phase_id       TEXT NOT NULL,
+        band_id        TEXT,
+        worker_id      TEXT,
+        monthly_amount REAL NOT NULL DEFAULT 0,
+        updated_at     INTEGER NOT NULL,
+        deleted        INTEGER NOT NULL DEFAULT 0,
+        dirty          INTEGER NOT NULL DEFAULT 1
+      );
+    ''');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_gia_luong_doan ON gia_luong(crew_id);');
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_gia_luong_tra ON gia_luong(phase_id, band_id, worker_id);',
+    );
+
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS nhan_vien (
+        id         TEXT PRIMARY KEY,
+        crew_id    TEXT NOT NULL,
+        name       TEXT NOT NULL,
+        phone      TEXT,
+        band_id    TEXT,
+        join_date  INTEGER,
+        leave_date INTEGER,
+        status     TEXT NOT NULL DEFAULT 'dang_lam',
+        note       TEXT,
+        updated_at INTEGER NOT NULL,
+        deleted    INTEGER NOT NULL DEFAULT 0,
+        dirty      INTEGER NOT NULL DEFAULT 1
+      );
+    ''');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_nhan_vien_doan ON nhan_vien(crew_id, status);');
+
+    // Chấm công theo ngày. Mỗi dòng lưu kèm mức lương tháng và số ngày của
+    // tháng tại thời điểm chấm, để sửa bảng giá sau này không làm lương tháng
+    // trước tự nhảy.
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS cham_cong (
+        id             TEXT PRIMARY KEY,
+        crew_id        TEXT NOT NULL,
+        worker_id      TEXT NOT NULL,
+        date           INTEGER NOT NULL,
+        present        INTEGER NOT NULL DEFAULT 1,
+        phase_id       TEXT,
+        monthly_amount REAL NOT NULL DEFAULT 0,
+        days_in_month  INTEGER NOT NULL DEFAULT 30,
+        note           TEXT,
+        created_by     TEXT,
+        updated_at     INTEGER NOT NULL,
+        deleted        INTEGER NOT NULL DEFAULT 0,
+        dirty          INTEGER NOT NULL DEFAULT 1
+      );
+    ''');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_cham_cong_nguoi ON cham_cong(worker_id, date);');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_cham_cong_doan ON cham_cong(crew_id, date);');
+    // Một người một ngày chỉ được một bản ghi: chấm hai lần cùng ngày là tính
+    // công gấp đôi mà không ai nhìn ra.
+    db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_cham_cong_ngay '
+      'ON cham_cong(worker_id, date) WHERE deleted = 0;',
+    );
+
+    // Sổ tiền chung: ứng lương, tăng ca, phụ cấp, trừ tiền, thanh toán.
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS so_tien (
+        id              TEXT PRIMARY KEY,
+        crew_id         TEXT NOT NULL,
+        worker_id       TEXT NOT NULL,
+        type            TEXT NOT NULL,
+        amount          REAL NOT NULL DEFAULT 0,
+        date            INTEGER NOT NULL,
+        note            TEXT,
+        over_cap_reason TEXT,
+        created_by      TEXT,
+        updated_at      INTEGER NOT NULL,
+        deleted         INTEGER NOT NULL DEFAULT 0,
+        dirty           INTEGER NOT NULL DEFAULT 1
+      );
+    ''');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_so_tien_nguoi ON so_tien(worker_id, date);');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_so_tien_doan ON so_tien(crew_id, type);');
   }
 
   /// Phiên bản 2: thêm tài khoản đăng nhập.

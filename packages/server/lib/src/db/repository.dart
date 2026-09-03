@@ -2,13 +2,17 @@ import 'package:canxe_shared/canxe_shared.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'database.dart';
+import 'payroll_repository.dart';
 
 /// Truy cập dữ liệu cho cả hai vai trò server. Cùng một lược đồ chạy ở trạm cân
 /// lẫn máy chủ trung tâm, chỉ khác nhau ở việc ai đồng bộ cho ai.
 class Repository {
-  Repository(this._appDb);
+  Repository(this._appDb) : payroll = PayrollRepository(_appDb);
 
   final AppDatabase _appDb;
+
+  /// Phần dữ liệu của module chấm công.
+  final PayrollRepository payroll;
 
   Database get _db => _appDb.db;
 
@@ -477,6 +481,11 @@ class Repository {
       vehicles: load('vehicles', Vehicle.fromJson),
       goodsTypes: load('goods_types', GoodsType.fromJson),
       tickets: load('tickets', WeighTicket.fromJson, byStation: true),
+      payroll: payroll.changesSince(
+        since,
+        allowedStations: limitByStation ? stations.toList() : null,
+        limit: limit,
+      ),
       serverTime: DateTime.now(),
     );
   }
@@ -494,6 +503,7 @@ class Repository {
       vehicles: load('vehicles', Vehicle.fromJson),
       goodsTypes: load('goods_types', GoodsType.fromJson),
       tickets: load('tickets', WeighTicket.fromJson),
+      payroll: payroll.dirtyChanges(limit: limit),
     );
   }
 
@@ -502,7 +512,7 @@ class Repository {
     for (final table in ['nguoi_dung', 'customers', 'vehicles', 'goods_types', 'tickets']) {
       total += _db.select('SELECT COUNT(*) AS c FROM $table WHERE dirty = 1').first['c'] as int;
     }
-    return total;
+    return total + payroll.pendingPushCount();
   }
 
   /// Ghi dữ liệu nhận được từ bên kia vào cơ sở dữ liệu.
@@ -532,6 +542,7 @@ class Repository {
         upsertTicket(t, dirty: markDirty);
         applied++;
       }
+      applied += payroll.applyPayload(payload.payroll, markDirty: markDirty);
     });
     return applied;
   }
@@ -550,6 +561,7 @@ class Repository {
       clear('vehicles', pushed.vehicles.map((e) => e.id));
       clear('goods_types', pushed.goodsTypes.map((e) => e.id));
       clear('tickets', pushed.tickets.map((e) => e.id));
+      payroll.clearDirty(pushed.payroll);
     });
   }
 
