@@ -1,0 +1,15 @@
+# Chuẩn hoá xuống dòng để repo không lẫn lộn khi chép qua lại giữa các máy.
+* text=auto eol=lf
+
+# Script PowerShell giữ CRLF cho đúng kiểu Windows.
+*.ps1 text eol=crlf
+
+# Tệp nhị phân: Git không được đụng vào nội dung.
+*.ttf binary
+*.otf binary
+*.png binary
+*.ico binary
+*.jpg binary
+*.pdf binary
+*.exe binary
+*.db binary

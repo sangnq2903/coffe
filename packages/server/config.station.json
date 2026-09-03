@@ -1,0 +1,45 @@
+﻿{
+  "_huong_dan": "Cấu hình chạy thử trên máy này: trạm cân KHO01 với đầu cân GIẢ LẬP, đồng bộ về máy chủ trung tâm ở cùng máy.",
+
+  "role": "station",
+  "http": {
+    "host": "0.0.0.0",
+    "port": 9081
+  },
+
+  "station": {
+    "code": "KHO01",
+    "name": "Trạm cân kho 01",
+    "warehouse_name": "Kho số 1",
+    "public_base_url": "http://100.76.81.118:9081"
+  },
+
+  "central": {
+    "url": "http://127.0.0.1:9080",
+    "sync_interval_seconds": 15
+  },
+
+  "database": {
+    "path": "data/canxe-kho01.db"
+  },
+
+  "web_root": "web",
+
+  "scale": {
+    "_dau_can": "Keli D2008FA, chế độ truyền liên tục TF=0 — khung STX + dấu + 6 chữ số + vị trí thập phân + checksum + ETX.",
+    "port": "COM5",
+    "baud_rate": 2400,
+    "data_bits": 8,
+    "stop_bits": 1,
+    "parity": "none",
+    "protocol": "keli",
+    "divisor": 1,
+    "unit": "kg",
+    "stable_tolerance": 5,
+    "stable_samples": 5,
+    "simulate": false,
+    "_data_timeout_seconds": "Bao lâu không nhận được khung nào thì báo mất kết nối. Cổng COM vẫn mở được kể cả khi đầu cân bị tắt nguồn.",
+    "data_timeout_seconds": 5,
+    "broadcast_interval_ms": 200
+  }
+}

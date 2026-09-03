@@ -1,0 +1,35 @@
+name: canxe_app
+description: Ứng dụng cân xe — chạy trên web, Windows và điện thoại.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  canxe_shared:
+    path: ../shared
+  cupertino_icons: ^1.0.8
+  intl: ^0.20.2
+  provider: ^6.1.2
+  shared_preferences: ^2.3.3
+  pdf: ^3.11.3
+  printing: ^5.14.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Roboto (Apache 2.0, lấy từ Flutter SDK) được nhúng để phiếu cân in ra có
+  # đầy đủ dấu tiếng Việt — font mặc định của thư viện PDF không có dấu.
+  assets:
+    - assets/fonts/Roboto-Regular.ttf
+    - assets/fonts/Roboto-Bold.ttf

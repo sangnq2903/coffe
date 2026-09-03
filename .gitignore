@@ -1,0 +1,33 @@
+# Dart / Flutter
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Giao diện web đã build — sinh lại bằng scripts/build-web.ps1
+packages/server/web/
+
+# Dữ liệu chạy thật: cơ sở dữ liệu của từng máy, không đưa lên git
+packages/server/data/
+*.db
+*.db-wal
+*.db-shm
+
+# Cấu hình riêng của từng máy (giữ lại các file .example.json làm mẫu)
+packages/server/config.json
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Hệ điều hành
+Thumbs.db
+.DS_Store
+
+# Log cua dich vu chay nen
+logs/
+
+# May chu da bien dich - sinh lai bang scripts/build-web.ps1
+packages/server/build/

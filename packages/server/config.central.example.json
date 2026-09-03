@@ -1,0 +1,18 @@
+﻿{
+  "_huong_dan": "Cấu hình MÁY CHỦ TRUNG TÂM. Chép file này thành config.json trên máy 100.76.81.118 rồi sửa lại.",
+  "role": "central",
+  "http": {
+    "host": "0.0.0.0",
+    "port": 9080
+  },
+  "station": {
+    "code": "TRUNGTAM",
+    "name": "Máy chủ trung tâm",
+    "warehouse_name": "Văn phòng",
+    "public_base_url": "http://100.76.81.118:9080"
+  },
+  "database": {
+    "path": "data/canxe-central.db"
+  },
+  "web_root": "web"
+}

@@ -1,0 +1,50 @@
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Thiết lập kết nối của máy/điện thoại đang dùng app.
+///
+/// Lưu tại thiết bị: mỗi máy ở kho trỏ vào một server khác nhau (máy trong kho
+/// trỏ thẳng vào trạm cân của kho đó, máy văn phòng trỏ vào máy chủ trung tâm).
+class AppSettings extends ChangeNotifier {
+  AppSettings._(this._prefs);
+
+  static const _kServerUrl = 'server_url';
+  static const _kStationCode = 'station_code';
+  static const _kOperator = 'operator_name';
+
+  static Future<AppSettings> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    return AppSettings._(prefs);
+  }
+
+  final SharedPreferences _prefs;
+
+  /// Địa chỉ server đang dùng, ví dụ `http://100.76.81.118:9080`.
+  ///
+  /// Khi app được chính server phục vụ (mở trình duyệt vào địa chỉ server) thì
+  /// để trống, app sẽ tự dùng địa chỉ đang mở — người dùng không phải gõ gì.
+  String get serverUrl => _prefs.getString(_kServerUrl) ?? '';
+
+  /// Mã trạm đang theo dõi số cân.
+  String get stationCode => _prefs.getString(_kStationCode) ?? '';
+
+  /// Tên người cân, ghi vào phiếu để biết ai lập.
+  String get operatorName => _prefs.getString(_kOperator) ?? '';
+
+  bool get isConfigured => serverUrl.isNotEmpty || kIsWeb;
+
+  Future<void> setServerUrl(String value) async {
+    await _prefs.setString(_kServerUrl, value.trim());
+    notifyListeners();
+  }
+
+  Future<void> setStationCode(String value) async {
+    await _prefs.setString(_kStationCode, value.trim().toUpperCase());
+    notifyListeners();
+  }
+
+  Future<void> setOperatorName(String value) async {
+    await _prefs.setString(_kOperator, value.trim());
+    notifyListeners();
+  }
+}
