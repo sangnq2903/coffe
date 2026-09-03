@@ -380,8 +380,6 @@ Còn được ứng = Trần ứng − đã ứng trong tháng
 Tab **Tiền** của đoàn: tổng thu nhập / đã ứng / đã thanh toán / còn phải trả,
 kèm từng người với trần ứng và số còn được ứng của tháng đang xem.
 
-- **Số tiền che sẵn**, bấm con mắt mới hiện. Chấm công thường làm ngay trước mặt
-  cả đoàn, mà lương từng người là chuyện riêng
 - Bấm vào một người ra **sổ tiền**: công nợ cả mùa, từng tháng bung ra xem chi
   tiết (lương theo công, tăng ca, phụ cấp, trừ tiền, trần ứng, đã ứng, còn ứng)
   và danh sách từng khoản

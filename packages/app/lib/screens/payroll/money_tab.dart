@@ -6,13 +6,6 @@ import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../state/server_connection.dart';
 
-/// Che số tiền sau dấu chấm khi chưa bấm mở.
-///
-/// Chấm công thường làm ngay trước mặt cả đoàn, mà lương từng người là chuyện
-/// riêng — nên mặc định che, muốn xem thì bấm con mắt.
-String maskMoney(double? value, {required bool masked}) =>
-    masked ? '•••' : formatMoney(value);
-
 /// Bảng tiền của cả đoàn: ai còn phải trả bao nhiêu, ai đã nhận vượt.
 class MoneyTab extends StatefulWidget {
   const MoneyTab({super.key, required this.crew});
@@ -27,7 +20,6 @@ class _MoneyTabState extends State<MoneyTab> {
   late DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   CrewMoney? _money;
   bool _loading = false;
-  bool _masked = true;
   String? _error;
 
   ApiClient? get _client => context.read<ServerConnection>().client;
@@ -89,11 +81,6 @@ class _MoneyTabState extends State<MoneyTab> {
                 tooltip: 'Tháng sau',
                 icon: const Icon(Icons.chevron_right),
                 onPressed: () => _shift(1),
-              ),
-              IconButton(
-                tooltip: _masked ? 'Hiện số tiền' : 'Che số tiền',
-                icon: Icon(_masked ? Icons.visibility_off : Icons.visibility),
-                onPressed: () => setState(() => _masked = !_masked),
               ),
               IconButton(
                 tooltip: 'Làm mới',
@@ -203,7 +190,7 @@ class _MoneyTabState extends State<MoneyTab> {
                       fontWeight: bold ? FontWeight.w700 : null)),
             ),
             Text(
-              '${maskMoney(value, masked: _masked)} đ',
+              '${formatMoney(value)} đ',
               style: TextStyle(
                 fontSize: bold ? 16 : 14,
                 fontWeight: FontWeight.w700,
@@ -226,17 +213,17 @@ class _MoneyTabState extends State<MoneyTab> {
       title: Text(row.name),
       subtitle: Text([
         if (row.stationCode != null) 'Kho ${row.stationCode}',
-        'trần tháng ${maskMoney(row.thisMonth.advanceCap, masked: _masked)}',
+        'trần tháng ${formatMoney(row.thisMonth.advanceCap)}',
         conUng <= 0
             ? 'hết mức ứng'
-            : 'còn ứng được ${maskMoney(conUng, masked: _masked)}',
+            : 'còn ứng được ${formatMoney(conUng)}',
       ].join(' • ')),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(
-            '${maskMoney(row.balance.balance, masked: _masked)} đ',
+            '${formatMoney(row.balance.balance)} đ',
             style: TextStyle(
               fontWeight: FontWeight.w700,
               color: am ? AppTheme.offline : null,
@@ -282,7 +269,6 @@ class WorkerMoneyScreen extends StatefulWidget {
 class _WorkerMoneyScreenState extends State<WorkerMoneyScreen> {
   MoneySheet? _sheet;
   bool _loading = false;
-  bool _masked = false;
   String? _error;
 
   ApiClient? get _client => context.read<ServerConnection>().client;
@@ -310,8 +296,6 @@ class _WorkerMoneyScreenState extends State<WorkerMoneyScreen> {
     }
   }
 
-  String _money(double? value) => maskMoney(value, masked: _masked);
-
   @override
   Widget build(BuildContext context) {
     final sheet = _sheet;
@@ -319,11 +303,6 @@ class _WorkerMoneyScreenState extends State<WorkerMoneyScreen> {
       appBar: AppBar(
         title: Text(widget.workerName),
         actions: [
-          IconButton(
-            tooltip: _masked ? 'Hiện số tiền' : 'Che số tiền',
-            icon: Icon(_masked ? Icons.visibility_off : Icons.visibility),
-            onPressed: () => setState(() => _masked = !_masked),
-          ),
           IconButton(
             tooltip: 'Làm mới',
             icon: const Icon(Icons.refresh),
@@ -405,7 +384,7 @@ class _WorkerMoneyScreenState extends State<WorkerMoneyScreen> {
             ),
             const SizedBox(width: AppTheme.gapSm),
             Text(
-              '${_money(value)} đ',
+              '${formatMoney(value)} đ',
               style: TextStyle(
                   fontSize: bold ? 17 : 14, fontWeight: FontWeight.w700, color: color),
             ),
@@ -482,8 +461,8 @@ class _WorkerMoneyScreenState extends State<WorkerMoneyScreen> {
     return ExpansionTile(
       title: Text('Tháng ${m.monthKey.substring(5)}/${m.monthKey.substring(0, 4)}'),
       subtitle: Text(
-        '${formatDecimal(m.workUnits)} công • thu nhập ${_money(m.income)} • '
-        '${hetMuc ? 'hết mức ứng' : 'còn ứng ${_money(m.remainingAdvance)}'}',
+        '${formatDecimal(m.workUnits)} công • thu nhập ${formatMoney(m.income)} • '
+        '${hetMuc ? 'hết mức ứng' : 'còn ứng ${formatMoney(m.remainingAdvance)}'}',
         style: TextStyle(color: m.overCap ? AppTheme.offline : null),
       ),
       children: [
@@ -553,7 +532,7 @@ class _WorkerMoneyScreenState extends State<WorkerMoneyScreen> {
       title: Row(
         children: [
           Expanded(child: Text(entry.type.label)),
-          Text('${_money(entry.amount)} đ',
+          Text('${formatMoney(entry.amount)} đ',
               style: const TextStyle(fontWeight: FontWeight.w700)),
         ],
       ),
