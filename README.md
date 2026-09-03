@@ -321,6 +321,64 @@ ba ô ký tên. Trên điện thoại có thêm nút **Chia sẻ**, trên web l�
 
 ---
 
+## 5c. Module chấm công — luật tính lương
+
+Đây là các quy tắc nghiệp vụ đã chốt. Mọi luật dưới đây đều có kiểm thử tự động
+trong `packages/shared/test/payroll_calculator_test.dart`; sửa luật mà quên sửa
+test thì test sẽ đỏ.
+
+### Cấu trúc
+
+| Khái niệm | Nghĩa |
+|---|---|
+| **Đoàn** | Một mùa vụ tại một kho. Mỗi mùa lập đoàn mới; **một người chỉ thuộc một đoàn** |
+| **Giai đoạn lương** | Đầu mùa và mùa rộ — khác nhau **mức lương**, dùng chung danh sách người. Mốc chuyển khai bằng ngày |
+| **Mức lương** | Bảng dùng chung ("Thợ chính", "Thợ phụ"). Ai có thoả thuận riêng thì **đặt giá riêng**, không bị ảnh hưởng khi sửa bảng chung |
+
+### Tính lương
+
+- **Lương tính theo tháng**, chấm công ghi **theo ngày** (chỉ để biết ai đi ai nghỉ)
+- **Ngày công của tháng = số ngày của tháng** (28/29/30/31), kể cả chủ nhật
+- **Không có nghỉ phép có lý do** — nghỉ ngày nào mất công ngày đó
+- Tháng vắt qua hai giai đoạn thì cộng hai phần:
+
+```
+Lương T10 = 15/31 × lương đầu mùa  +  16/31 × lương mùa rộ
+```
+
+### Trần ứng lương
+
+```
+Trần ứng   = 50% × (lương đã làm được tới hôm nay + tăng ca + phụ cấp − tiền phạt)
+Còn được ứng = Trần ứng − đã ứng trong tháng
+```
+
+- Trần **đặt lại mỗi tháng** và **nhích lên theo từng ngày** người đó đi làm
+- **Nợ dồn từ tháng trước KHÔNG làm trần tháng sau cao lên.** Tháng 9 ứng hết
+  trần rồi treo lại một nửa, sang tháng 10 trần vẫn chỉ là nửa lương tháng 10
+- **Ứng lương và thanh toán không tính vào thu nhập.** Lẫn vào thì cứ ứng một
+  lần trần lại cao lên, ứng được vô hạn
+- Vượt trần: **cảnh báo nhưng vẫn cho ứng** nếu nhập lý do — mọi lần vượt đều
+  vào sổ để tra lại
+- Tiền ứng làm tròn xuống bội số 10.000 đ cho khớp việc đưa tiền mặt
+
+### Thanh toán và cảnh báo
+
+- **Trong mùa chỉ ứng; quyết toán một lần vào cuối mùa**
+- Ai **đã nhận vượt** công đã làm thì số dư âm và bị cảnh báo — không im lặng
+
+### Hai điều dễ làm sai
+
+**Sửa bảng giá không được làm đổi lương đã tính.** Mỗi ngày chấm công lưu kèm
+mức lương tháng tại thời điểm chấm. Lương đã trả rồi mà con số trong máy tự
+nhảy thì không ai đối chiếu nổi. Muốn tính lại quá khứ phải bấm nút riêng.
+
+**Lương tháng phải gộp rồi mới chia, không cộng tiền từng ngày.** Chia
+8.000.000 cho 30 ngày ra số lẻ vô hạn; cộng từng ngày lại thì đi làm đủ tháng
+không ra đúng 8.000.000. Người ta đếm tiền nên lệch vài đồng cũng thành thắc mắc.
+
+---
+
 ## 6. Cách hệ thống giữ dữ liệu an toàn
 
 - **Mất mạng vẫn cân được.** Trạm cân có cơ sở dữ liệu riêng. Bản ghi mới được
