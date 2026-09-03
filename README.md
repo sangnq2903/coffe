@@ -370,8 +370,28 @@ Còn được ứng = Trần ứng − đã ứng trong tháng
 
 ### Thanh toán và cảnh báo
 
-- **Trong mùa chỉ ứng; quyết toán một lần vào cuối mùa**
-- Ai **đã nhận vượt** công đã làm thì số dư âm và bị cảnh báo — không im lặng
+- **Trong mùa chỉ ứng; quyết toán một lần vào cuối mùa.** Máy chủ chặn khoản
+  thanh toán khi đoàn còn đang diễn ra — phải đóng đoàn trước
+- Ai **đã nhận vượt** công đã làm thì số dư âm và bị cảnh báo — không im lặng.
+  Tab **Tiền** đếm ra số người như vậy ngay trên đầu danh sách
+
+### Màn hình tiền
+
+Tab **Tiền** của đoàn: tổng thu nhập / đã ứng / đã thanh toán / còn phải trả,
+kèm từng người với trần ứng và số còn được ứng của tháng đang xem.
+
+- **Số tiền che sẵn**, bấm con mắt mới hiện. Chấm công thường làm ngay trước mặt
+  cả đoàn, mà lương từng người là chuyện riêng
+- Bấm vào một người ra **sổ tiền**: công nợ cả mùa, từng tháng bung ra xem chi
+  tiết (lương theo công, tăng ca, phụ cấp, trừ tiền, trần ứng, đã ứng, còn ứng)
+  và danh sách từng khoản
+- Hộp thoại **ứng lương vừa nhập vừa hỏi máy chủ** còn được ứng bao nhiêu, nên
+  thấy cảnh báo *trước* khi bấm ghi. Có nút "Ứng tối đa" điền sẵn số tròn bội
+  số 10.000
+- Vượt trần thì nút đổi thành **"Vẫn ứng"** màu đỏ và **bắt nhập lý do** — chủ
+  quyết định phá luật thì phải để lại vết, vì đây là chỗ dễ thất thoát nhất
+- Sửa một khoản ứng **không bị đếm tiền cũ hai lần**: kiểm tra trần loại chính
+  khoản đang sửa ra khỏi phép tính
 
 ### Hai điều dễ làm sai
 

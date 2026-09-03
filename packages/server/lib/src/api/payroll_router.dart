@@ -152,6 +152,55 @@ class PayrollRouter {
       });
     });
 
+    // -------------------------------------------------------------- sổ tiền
+    router.get('/api/doan/<id>/tien', (Request request, String id) => guard(() {
+          if (_crewOr404(id) == null) return error('Không tìm thấy đoàn.', 404);
+          final q = request.url.queryParameters;
+          final now = DateTime.now();
+          return json(service.crewMoney(
+            id,
+            month: DateTime(
+              asInt(q['year'], fallback: now.year),
+              asInt(q['month'], fallback: now.month),
+            ),
+          ));
+        }));
+
+    router.get('/api/doan/<id>/nhan-vien/<workerId>/tien',
+        (Request request, String id, String workerId) => guard(() {
+              if (_crewOr404(id) == null) return error('Không tìm thấy đoàn.', 404);
+              return json(service.moneySheet(id, workerId));
+            }));
+
+    // Thử một lần ứng trước khi ghi, để màn hình cảnh báo ngay lúc đang nhập.
+    router.post('/api/doan/<id>/so-tien/kiem-tra', (Request request, String id) async {
+      final data = await body(request);
+      return guard(() {
+        if (_crewOr404(id) == null) return error('Không tìm thấy đoàn.', 404);
+        return json(service.previewAdvance(
+          crewId: id,
+          workerId: asString(data['worker_id']),
+          amount: asDouble(data['amount']),
+          date: asTimeOrNull(data['date']),
+          ignoreEntryId: asStringOrNull(data['id']),
+        ));
+      });
+    });
+
+    router.post('/api/doan/<id>/so-tien', (Request request, String id) async {
+      final data = await body(request);
+      return guard(() {
+        if (_crewOr404(id) == null) return error('Không tìm thấy đoàn.', 404);
+        return json(service.saveEntry(id, data, createdBy: user(request).username));
+      });
+    });
+
+    router.delete('/api/doan/<id>/so-tien/<entryId>',
+        (Request request, String id, String entryId) => guard(() {
+              if (_crewOr404(id) == null) return error('Không tìm thấy đoàn.', 404);
+              return json(service.deleteEntry(id, entryId));
+            }));
+
     router.post('/api/nhan-vien/<workerId>/nghi-lam',
         (Request request, String workerId) async {
       final data = await body(request);

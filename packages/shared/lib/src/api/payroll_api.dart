@@ -1,7 +1,9 @@
 import '../json_utils.dart';
 import '../models/payroll/crew.dart';
+import '../models/payroll/payroll_entry.dart';
 import '../models/payroll/wage.dart';
 import '../models/payroll/worker.dart';
+import '../payroll/payroll_calculator.dart';
 import 'api_client.dart';
 
 /// Bảng lương của một đoàn, dựng sẵn cho màn hình cấu hình.
@@ -355,6 +357,168 @@ class RecalcChange {
   final double to;
 }
 
+/// Sổ tiền của một người: từng tháng, công nợ cả mùa và danh sách khoản.
+class MoneySheet {
+  const MoneySheet({
+    this.worker,
+    this.months = const [],
+    this.balance = const WorkerBalance(totalEarned: 0, totalAdvanced: 0, totalPaid: 0),
+    this.entries = const [],
+  });
+
+  factory MoneySheet.fromJson(Map<String, Object?> json) => MoneySheet(
+        worker: json['worker'] == null
+            ? null
+            : Worker.fromJson((json['worker']! as Map).cast<String, Object?>()),
+        months: asMapList(json['months']).map(monthlyPayrollFromJson).toList(),
+        balance: workerBalanceFromJson(json['balance']),
+        entries: asMapList(json['entries']).map(PayrollEntry.fromJson).toList(),
+      );
+
+  final Worker? worker;
+
+  /// Các tháng có chấm công hoặc có khoản tiền, cũ trước mới sau.
+  final List<MonthlyPayroll> months;
+
+  final WorkerBalance balance;
+
+  /// Mọi khoản tiền của người này, mới nhất trước.
+  final List<PayrollEntry> entries;
+
+  /// Tháng gần nhất, dùng khi cần một mốc để ứng lương.
+  MonthlyPayroll? get latestMonth => months.isEmpty ? null : months.last;
+
+  List<PayrollEntry> entriesOfMonth(String monthKey) =>
+      entries.where((e) => e.monthKey == monthKey).toList();
+}
+
+/// Bảng tiền của cả đoàn.
+class CrewMoney {
+  const CrewMoney({
+    this.monthKey = '',
+    this.rows = const [],
+    this.totalEarned = 0,
+    this.totalAdvanced = 0,
+    this.totalPaid = 0,
+    this.totalBalance = 0,
+    this.negativeCount = 0,
+  });
+
+  factory CrewMoney.fromJson(Map<String, Object?> json) => CrewMoney(
+        monthKey: asString(json['month_key']),
+        rows: asMapList(json['rows']).map(MoneyRow.fromJson).toList(),
+        totalEarned: asDouble(json['total_earned']),
+        totalAdvanced: asDouble(json['total_advanced']),
+        totalPaid: asDouble(json['total_paid']),
+        totalBalance: asDouble(json['total_balance']),
+        negativeCount: asInt(json['negative_count']),
+      );
+
+  final String monthKey;
+  final List<MoneyRow> rows;
+  final double totalEarned;
+  final double totalAdvanced;
+  final double totalPaid;
+  final double totalBalance;
+
+  /// Số người đã nhận vượt công đã làm — phải hiện ra, không được im lặng.
+  final int negativeCount;
+}
+
+/// Một người trong bảng tiền của đoàn.
+class MoneyRow {
+  const MoneyRow({
+    required this.workerId,
+    required this.name,
+    this.stationCode,
+    required this.balance,
+    required this.thisMonth,
+  });
+
+  factory MoneyRow.fromJson(Map<String, Object?> json) => MoneyRow(
+        workerId: asString(json['worker_id']),
+        name: asString(json['name']),
+        stationCode: asStringOrNull(json['station_code']),
+        balance: workerBalanceFromJson(json['balance']),
+        thisMonth: monthlyPayrollFromJson(
+            (json['this_month'] as Map?)?.cast<String, Object?>() ?? const {}),
+      );
+
+  final String workerId;
+  final String name;
+  final String? stationCode;
+  final WorkerBalance balance;
+  final MonthlyPayroll thisMonth;
+}
+
+/// Kết quả thử một lần ứng trước khi ghi.
+class AdvancePreview {
+  const AdvancePreview({
+    this.requested = 0,
+    this.allowed = 0,
+    this.cap = 0,
+    this.advancedBefore = 0,
+    this.income = 0,
+    this.exceedsCap = false,
+    this.excess = 0,
+    this.warning,
+    this.suggested = 0,
+  });
+
+  factory AdvancePreview.fromJson(Map<String, Object?> json) => AdvancePreview(
+        requested: asDouble(json['requested']),
+        allowed: asDouble(json['allowed']),
+        cap: asDouble(json['cap']),
+        advancedBefore: asDouble(json['advanced_before']),
+        income: asDouble(json['income']),
+        exceedsCap: asBool(json['exceeds_cap']),
+        excess: asDouble(json['excess']),
+        warning: asStringOrNull(json['warning']),
+        suggested: asDouble(json['suggested']),
+      );
+
+  final double requested;
+
+  /// Còn được ứng bao nhiêu trước khi vượt trần.
+  final double allowed;
+
+  final double cap;
+  final double advancedBefore;
+  final double income;
+  final bool exceedsCap;
+  final double excess;
+
+  /// Câu cảnh báo dựng sẵn ở máy chủ, `null` nếu không vượt trần.
+  final String? warning;
+
+  /// Số tròn bội số 10.000 nên ứng, cho khớp việc đưa tiền mặt.
+  final double suggested;
+}
+
+/// Đọc [MonthlyPayroll] từ JSON của máy chủ.
+///
+/// Dùng lại đúng lớp trong công thức lương thay vì tạo lớp riêng cho client:
+/// trần ứng và thu nhập chỉ được tính ở một chỗ, hai chỗ là sớm muộn lệch nhau.
+MonthlyPayroll monthlyPayrollFromJson(Map<String, Object?> json) => MonthlyPayroll(
+      monthKey: asString(json['month_key']),
+      daysWorked: asInt(json['days_worked']),
+      workUnits: asDouble(json['work_units']),
+      wageEarned: asDouble(json['wage_earned']),
+      overtime: asDouble(json['overtime']),
+      allowance: asDouble(json['allowance']),
+      deduction: asDouble(json['deduction']),
+      advanced: asDouble(json['advanced']),
+    );
+
+WorkerBalance workerBalanceFromJson(Object? raw) {
+  final json = (raw as Map?)?.cast<String, Object?>() ?? const {};
+  return WorkerBalance(
+    totalEarned: asDouble(json['total_earned']),
+    totalAdvanced: asDouble(json['total_advanced']),
+    totalPaid: asDouble(json['total_paid']),
+  );
+}
+
 /// Các lời gọi API của module chấm công.
 extension PayrollApi on ApiClient {
   // ------------------------------------------------------------------- đoàn
@@ -541,4 +705,62 @@ extension PayrollApi on ApiClient {
         'year': year,
         'month': month,
       }));
+
+  // ---------------------------------------------------------------- sổ tiền
+
+  Future<CrewMoney> crewMoney(String crewId,
+          {required int year, required int month}) async =>
+      CrewMoney.fromJson(await getMap('/api/doan/$crewId/tien', {
+        'year': '$year',
+        'month': '$month',
+      }));
+
+  Future<MoneySheet> moneySheet(String crewId, String workerId) async =>
+      MoneySheet.fromJson(
+          await getMap('/api/doan/$crewId/nhan-vien/$workerId/tien'));
+
+  /// Thử một lần ứng trước khi ghi, để cảnh báo ngay lúc đang nhập.
+  ///
+  /// Truyền [entryId] khi đang sửa một khoản, không thì tiền cũ bị đếm hai lần.
+  Future<AdvancePreview> previewAdvance({
+    required String crewId,
+    required String workerId,
+    required double amount,
+    DateTime? date,
+    String? entryId,
+  }) async =>
+      AdvancePreview.fromJson(await postMap('/api/doan/$crewId/so-tien/kiem-tra', {
+        'worker_id': workerId,
+        'amount': amount,
+        'date': timeToMillisOrNull(date),
+        if (entryId != null) 'id': entryId,
+      }));
+
+  /// Ghi một khoản tiền và nhận lại sổ tiền đã cập nhật của người đó.
+  ///
+  /// Ứng vượt trần thì bắt buộc có [overCapReason], không thì máy chủ từ chối
+  /// kèm câu cảnh báo nói rõ còn được ứng bao nhiêu.
+  Future<MoneySheet> saveEntry({
+    required String crewId,
+    required String workerId,
+    required PayrollEntryType type,
+    required double amount,
+    String? id,
+    DateTime? date,
+    String? note,
+    String? overCapReason,
+  }) async =>
+      MoneySheet.fromJson(await postMap('/api/doan/$crewId/so-tien', {
+        if (id != null) 'id': id,
+        'worker_id': workerId,
+        'type': type.value,
+        'amount': amount,
+        'date': timeToMillisOrNull(date),
+        'note': note,
+        if (overCapReason != null) 'over_cap_reason': overCapReason,
+      }));
+
+  Future<MoneySheet> deleteEntry(String crewId, String entryId) async =>
+      MoneySheet.fromJson(
+          await deleteMap('/api/doan/$crewId/so-tien/$entryId'));
 }

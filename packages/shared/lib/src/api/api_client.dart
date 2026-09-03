@@ -259,6 +259,10 @@ class ApiClient {
 
   Future<void> deletePath(String path) => _delete(path);
 
+  /// Xoá và đọc luôn thân phản hồi — có đường dẫn xoá xong trả về trạng thái
+  /// mới, gọi thêm một lượt GET nữa thì vừa chậm vừa có thể lệch nhau.
+  Future<Map<String, Object?>> deleteMap(String path) => _deleteMap(path);
+
   // -------------------------------------------------------------------- nội bộ
 
   Uri _uri(String path, [Map<String, String>? query]) => _build(path, query);
@@ -365,6 +369,12 @@ class ApiClient {
   Future<void> _delete(String path) async {
     final uri = _uri(path);
     await _send(() => _http.delete(uri, headers: _headers), uri);
+  }
+
+  Future<Map<String, Object?>> _deleteMap(String path) async {
+    final uri = _uri(path);
+    final body = await _send(() => _http.delete(uri, headers: _headers), uri);
+    return body is Map<String, Object?> ? body : <String, Object?>{};
   }
 
   Future<Object?> _send(Future<http.Response> Function() request, Uri uri) async {

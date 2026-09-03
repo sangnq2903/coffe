@@ -776,6 +776,327 @@ void main() {
     });
   });
 
+  group('Sổ tiền', () {
+    /// Dựng nền rồi chấm công đủ [days] ngày tháng 9 để có thu nhập thật.
+    ///
+    /// Lương đầu mùa 8 triệu, tháng 9 có 30 ngày: chấm 15 ngày là thu nhập 4
+    /// triệu, trần ứng 2 triệu — số tròn nên đọc test là hiểu ngay.
+    Future<Map<String, String>> nenCoLuong({int days = 15}) async {
+      final dauMua = await post('/api/doan/$doanA/giai-doan', {
+        'name': 'Đầu mùa',
+        'from_date': ngay(2026, 9, 1),
+        'to_date': ngay(2026, 10, 15),
+      });
+      final muc = await post('/api/doan/$doanA/muc-luong', {'name': 'Thợ chính'});
+      await post('/api/doan/$doanA/gia-luong', {
+        'phase_id': dauMua['id'],
+        'band_id': muc['id'],
+        'monthly_amount': 8000000,
+      });
+      final nv = await post('/api/doan/$doanA/nhan-vien', {
+        'name': 'A Tình',
+        'band_id': muc['id'],
+        'join_date': ngay(2026, 9, 1),
+      });
+      for (var d = 1; d <= days; d++) {
+        await post('/api/doan/$doanA/cham-cong', {
+          'date': ngay(2026, 9, d),
+          'marks': {nv['id']!: true},
+        });
+      }
+      return {'nv': nv['id']! as String, 'muc': muc['id']! as String};
+    }
+
+    Future<Map<String, Object?>> soTien(String workerId) async =>
+        (await body(await call('GET', '/api/doan/$doanA/nhan-vien/$workerId/tien',
+            token: tokenTong))) as Map<String, Object?>;
+
+    Future<Map<String, Object?>> ung(String workerId, double amount,
+            {int day = 15, String? reason, int expectStatus = 200}) async =>
+        post('/api/doan/$doanA/so-tien', {
+          'worker_id': workerId,
+          'type': 'ung_luong',
+          'amount': amount,
+          'date': ngay(2026, 9, day),
+          if (reason != null) 'over_cap_reason': reason,
+        }, expectStatus: expectStatus);
+
+    test('trần ứng bằng nửa thu nhập đã làm được', () async {
+      final nen = await nenCoLuong();
+      final thang = ((await soTien(nen['nv']!))['months'] as List).single as Map;
+
+      expect(thang['wage_earned'], 4000000, reason: '15/30 ngày của 8 triệu');
+      expect(thang['income'], 4000000);
+      expect(thang['advance_cap'], 2000000);
+      expect(thang['remaining_advance'], 2000000);
+    });
+
+    test('ứng trong trần thì ghi bình thường', () async {
+      final nen = await nenCoLuong();
+      final res = await ung(nen['nv']!, 1500000);
+
+      final thang = (res['months'] as List).single as Map;
+      expect(thang['advanced'], 1500000);
+      expect(thang['remaining_advance'], 500000);
+      expect(thang['over_cap'], false);
+      expect(((res['entry'] as Map)['over_cap_reason']), isNull);
+    });
+
+    test('ứng vượt trần mà không có lý do thì bị chặn, kèm số còn được ứng',
+        () async {
+      final nen = await nenCoLuong();
+      final res = await call('POST', '/api/doan/$doanA/so-tien',
+          token: tokenTong,
+          body: {
+            'worker_id': nen['nv'],
+            'type': 'ung_luong',
+            'amount': 3000000,
+            'date': ngay(2026, 9, 15),
+          });
+      final text = await res.readAsString();
+      expect(res.statusCode, 400);
+      expect(text, contains('Vượt trần'));
+      expect(text, contains('phải nhập lý do'));
+    });
+
+    test('ứng vượt trần có lý do thì cho ghi và giữ lý do lại', () async {
+      final nen = await nenCoLuong();
+      final res = await ung(nen['nv']!, 3000000, reason: 'Chủ duyệt lo việc gia đình');
+
+      final entry = res['entry'] as Map;
+      expect(entry['over_cap_reason'], contains('Chủ duyệt'));
+      final thang = (res['months'] as List).single as Map;
+      expect(thang['over_cap'], true);
+      expect(thang['remaining_advance'], 0, reason: 'không bao giờ ra số âm');
+    });
+
+    test('ứng đúng bằng trần vẫn được, không tính là vượt', () async {
+      final nen = await nenCoLuong();
+      final res = await ung(nen['nv']!, 2000000);
+      expect(((res['months'] as List).single as Map)['over_cap'], false);
+    });
+
+    test('tăng ca và phụ cấp làm trần cao lên, trừ tiền làm trần thấp xuống',
+        () async {
+      final nen = await nenCoLuong();
+      for (final (loai, tien) in [('tang_ca', 1000000.0), ('phu_cap', 600000.0)]) {
+        await post('/api/doan/$doanA/so-tien', {
+          'worker_id': nen['nv'],
+          'type': loai,
+          'amount': tien,
+          'date': ngay(2026, 9, 20),
+        });
+      }
+      var thang = ((await soTien(nen['nv']!))['months'] as List).single as Map;
+      expect(thang['income'], 5600000);
+      expect(thang['advance_cap'], 2800000);
+
+      await post('/api/doan/$doanA/so-tien', {
+        'worker_id': nen['nv'],
+        'type': 'tru_tien',
+        'amount': 600000,
+        'date': ngay(2026, 9, 21),
+      });
+      thang = ((await soTien(nen['nv']!))['months'] as List).single as Map;
+      expect(thang['income'], 5000000);
+      expect(thang['advance_cap'], 2500000);
+    });
+
+    test('ứng lương KHÔNG làm thu nhập tăng, nên không tự nâng trần', () async {
+      // Lẫn ứng vào thu nhập thì cứ ứng một lần trần lại cao lên, ứng vô hạn.
+      final nen = await nenCoLuong();
+      await ung(nen['nv']!, 2000000);
+      final thang = ((await soTien(nen['nv']!))['months'] as List).single as Map;
+      expect(thang['income'], 4000000);
+      expect(thang['advance_cap'], 2000000);
+      expect(thang['remaining_advance'], 0);
+    });
+
+    test('nợ dồn từ tháng trước không làm trần tháng sau cao lên', () async {
+      // Đây là quy tắc cốt lõi: tháng 9 ứng hết trần rồi treo lại một nửa,
+      // sang tháng 10 trần vẫn chỉ là nửa lương tháng 10.
+      final nen = await nenCoLuong();
+      await ung(nen['nv']!, 2000000);
+      for (var d = 1; d <= 10; d++) {
+        await post('/api/doan/$doanA/cham-cong', {
+          'date': ngay(2026, 10, d),
+          'marks': {nen['nv']!: true},
+        });
+      }
+
+      final thangs = (await soTien(nen['nv']!))['months'] as List;
+      final t10 = thangs.cast<Map>().firstWhere((m) => m['month_key'] == '2026-10');
+      expect(t10['wage_earned'], (8000000 * 10 / 31).round());
+      expect(t10['advanced'], 0, reason: 'khoản ứng tháng 9 không dồn sang tháng 10');
+      expect(t10['advance_cap'], ((8000000 * 10 / 31).round() / 2).round());
+    });
+
+    test('sửa khoản ứng không bị đếm tiền cũ hai lần', () async {
+      final nen = await nenCoLuong();
+      final ghi = await ung(nen['nv']!, 1500000);
+      final id = (ghi['entry'] as Map)['id'];
+
+      // Sửa 1,5 triệu thành 1,8 triệu: vẫn dưới trần 2 triệu nên phải cho qua.
+      final res = await post('/api/doan/$doanA/so-tien', {
+        'id': id,
+        'worker_id': nen['nv'],
+        'type': 'ung_luong',
+        'amount': 1800000,
+        'date': ngay(2026, 9, 15),
+      });
+      final thang = (res['months'] as List).single as Map;
+      expect(thang['advanced'], 1800000);
+      expect(thang['remaining_advance'], 200000);
+    });
+
+    test('thử ứng trước khi ghi thì báo trước phần vượt và số tròn nên ứng',
+        () async {
+      final nen = await nenCoLuong();
+      await ung(nen['nv']!, 500000);
+
+      final xem = await post('/api/doan/$doanA/so-tien/kiem-tra', {
+        'worker_id': nen['nv'],
+        'amount': 2000000,
+        'date': ngay(2026, 9, 15),
+      });
+      expect(xem['allowed'], 1500000);
+      expect(xem['exceeds_cap'], true);
+      expect(xem['excess'], 500000);
+      expect(xem['warning'], contains('Vượt trần'));
+      expect(xem['suggested'], 1500000, reason: 'bội số 10.000 để đưa tiền mặt');
+    });
+
+    test('số tiền không dương thì bị từ chối', () async {
+      final nen = await nenCoLuong();
+      for (final tien in [0, -100000]) {
+        await post('/api/doan/$doanA/so-tien', {
+          'worker_id': nen['nv'],
+          'type': 'ung_luong',
+          'amount': tien,
+          'date': ngay(2026, 9, 15),
+        }, expectStatus: 400);
+      }
+    });
+
+    test('nhận vượt công đã làm thì số dư âm và bị đánh dấu', () async {
+      final nen = await nenCoLuong();
+      await ung(nen['nv']!, 5000000, reason: 'Ứng gấp, chủ chịu rủi ro');
+
+      final so = await soTien(nen['nv']!);
+      final duNo = so['balance'] as Map;
+      expect(duNo['total_earned'], 4000000);
+      expect(duNo['total_advanced'], 5000000);
+      expect(duNo['balance'], -1000000);
+      expect(duNo['is_negative'], true);
+    });
+
+    test('bảng tiền cả đoàn đếm ra số người đã nhận vượt', () async {
+      final nen = await nenCoLuong();
+      await ung(nen['nv']!, 5000000, reason: 'Ứng gấp');
+
+      final bang = (await body(await call(
+          'GET', '/api/doan/$doanA/tien?year=2026&month=9',
+          token: tokenTong))) as Map;
+      expect(bang['negative_count'], 1);
+      expect(bang['total_earned'], 4000000);
+      expect(bang['total_advanced'], 5000000);
+      expect(bang['total_balance'], -1000000);
+      final dong = (bang['rows'] as List).single as Map;
+      expect((dong['balance'] as Map)['is_negative'], true);
+      expect((dong['this_month'] as Map)['advanced'], 5000000);
+    });
+
+    test('xoá khoản thì trần ứng và số dư trả lại như cũ', () async {
+      final nen = await nenCoLuong();
+      final ghi = await ung(nen['nv']!, 2000000);
+      final id = (ghi['entry'] as Map)['id'];
+
+      final res = (await body(await call(
+          'DELETE', '/api/doan/$doanA/so-tien/$id',
+          token: tokenTong))) as Map;
+      final thang = (res['months'] as List).single as Map;
+      expect(thang['advanced'], 0);
+      expect(thang['remaining_advance'], 2000000);
+      expect((res['balance'] as Map)['balance'], 4000000);
+    });
+
+    test('trong mùa chưa thanh toán được, phải đóng đoàn trước', () async {
+      final nen = await nenCoLuong();
+      final res = await call('POST', '/api/doan/$doanA/so-tien',
+          token: tokenTong,
+          body: {
+            'worker_id': nen['nv'],
+            'type': 'thanh_toan',
+            'amount': 4000000,
+            'date': ngay(2026, 9, 30),
+          });
+      final text = await res.readAsString();
+      expect(res.statusCode, 400);
+      expect(text, contains('quyết toán một lần vào cuối mùa'));
+
+      // Đóng đoàn rồi thì thanh toán được, và số dư về 0.
+      await post('/api/doan/$doanA', {'name': 'Đoàn hái', 'status': 'da_hoan_thanh'});
+      final ok = await post('/api/doan/$doanA/so-tien', {
+        'worker_id': nen['nv'],
+        'type': 'thanh_toan',
+        'amount': 4000000,
+        'date': ngay(2026, 9, 30),
+      });
+      expect((ok['balance'] as Map)['balance'], 0);
+    });
+
+    test('lý do vượt trần chỉ dành cho khoản ứng lương', () async {
+      final nen = await nenCoLuong();
+      await post('/api/doan/$doanA/so-tien', {
+        'worker_id': nen['nv'],
+        'type': 'phu_cap',
+        'amount': 100000,
+        'date': ngay(2026, 9, 20),
+        'over_cap_reason': 'không hợp lệ ở đây',
+      }, expectStatus: 400);
+    });
+
+    test('không đổi được loại của khoản đã ghi', () async {
+      final nen = await nenCoLuong();
+      final ghi = await ung(nen['nv']!, 500000);
+      await post('/api/doan/$doanA/so-tien', {
+        'id': (ghi['entry'] as Map)['id'],
+        'worker_id': nen['nv'],
+        'type': 'phu_cap',
+        'amount': 500000,
+        'date': ngay(2026, 9, 15),
+      }, expectStatus: 400);
+    });
+
+    test('không ghi được khoản cho người của đoàn khác', () async {
+      await nenCoLuong();
+      final nguoiDoanB = await post('/api/doan/$doanB/nhan-vien', {'name': 'Người đoàn B'});
+      await post('/api/doan/$doanA/so-tien', {
+        'worker_id': nguoiDoanB['id'],
+        'type': 'phu_cap',
+        'amount': 100000,
+        'date': ngay(2026, 9, 20),
+      }, expectStatus: 400);
+    });
+
+    test('tháng chỉ có khoản tiền mà chưa chấm ngày nào vẫn hiện trong sổ',
+        () async {
+      final nen = await nenCoLuong();
+      await post('/api/doan/$doanA/so-tien', {
+        'worker_id': nen['nv'],
+        'type': 'phu_cap',
+        'amount': 300000,
+        'date': ngay(2026, 12, 5),
+      });
+
+      final thangs = ((await soTien(nen['nv']!))['months'] as List).cast<Map>();
+      expect(thangs.map((m) => m['month_key']), containsAll(['2026-09', '2026-12']));
+      final t12 = thangs.firstWhere((m) => m['month_key'] == '2026-12');
+      expect(t12['allowance'], 300000);
+      expect(t12['wage_earned'], 0);
+    });
+  });
+
   group('Chưa đăng nhập', () {
     test('mọi đường dẫn chấm công đều bị chặn', () async {
       for (final path in [
@@ -785,6 +1106,7 @@ void main() {
         '/api/doan/$doanA/nhan-vien',
         '/api/doan/$doanA/cham-cong',
         '/api/doan/$doanA/cham-cong/thang',
+        '/api/doan/$doanA/tien',
       ]) {
         expect((await call('GET', path)).statusCode, 401, reason: path);
       }

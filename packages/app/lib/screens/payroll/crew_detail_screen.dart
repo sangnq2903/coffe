@@ -6,6 +6,7 @@ import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../state/server_connection.dart';
 import 'attendance_tab.dart';
+import 'money_tab.dart';
 
 /// Chi tiết một đoàn: chấm công, bảng tháng, nhân viên và cấu hình lương.
 ///
@@ -77,7 +78,7 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: Text(widget.crew.displayName),
@@ -87,6 +88,7 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
             tabs: [
               Tab(icon: Icon(Icons.how_to_reg), text: 'Chấm công'),
               Tab(icon: Icon(Icons.table_chart), text: 'Bảng tháng'),
+              Tab(icon: Icon(Icons.payments), text: 'Tiền'),
               Tab(icon: Icon(Icons.people), text: 'Nhân viên'),
               Tab(icon: Icon(Icons.tune), text: 'Cấu hình lương'),
             ],
@@ -112,6 +114,7 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
                 children: [
                   AttendanceDayTab(crewId: widget.crew.id),
                   AttendanceMonthTab(crewId: widget.crew.id),
+                  MoneyTab(crew: widget.crew),
                   _workersTab(),
                   _configTab(),
                 ],

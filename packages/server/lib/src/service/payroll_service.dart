@@ -645,6 +645,295 @@ class PayrollService {
     };
   }
 
+  // ================================================================ sổ tiền
+
+  /// Sổ tiền của một người: từng tháng, công nợ cả mùa và danh sách khoản.
+  ///
+  /// Dựng sẵn cả trần ứng của từng tháng để màn hình không phải tự tính lại —
+  /// tính hai nơi là sớm muộn lệch nhau.
+  Map<String, Object?> moneySheet(String crewId, String workerId) {
+    _requireCrew(crewId);
+    final worker = _requireWorker(crewId, workerId);
+
+    final attendances = _repo.attendances(crewId: crewId, workerId: workerId);
+    final entries = _repo.entries(crewId: crewId, workerId: workerId);
+
+    // Tháng nào có chấm công hoặc có khoản tiền thì hiện, kể cả tháng chỉ ứng
+    // mà chưa chấm ngày nào — nếu không thì khoản đó biến mất khỏi màn hình.
+    final months = <String>{
+      ...attendances.where((a) => !a.deleted).map((a) => a.monthKey),
+      ...entries.map((e) => e.monthKey),
+    }.toList()
+      ..sort();
+
+    final balance = PayrollCalculator.balance(
+      attendances: attendances,
+      entries: entries,
+    );
+
+    return {
+      'worker': worker.toJson(),
+      'months': [
+        for (final key in months)
+          _monthJson(PayrollCalculator.monthly(
+            monthKey: key,
+            attendances: attendances,
+            entries: entries,
+          )),
+      ],
+      'balance': _balanceJson(balance),
+      'entries': entries.map((e) => e.toJson()).toList(),
+    };
+  }
+
+  /// Bảng tiền của cả đoàn, dùng cho danh sách và cảnh báo.
+  Map<String, Object?> crewMoney(String crewId, {DateTime? month}) {
+    _requireCrew(crewId);
+    final moc = month ?? DateTime.now();
+    final monthKey = '${moc.year}-${moc.month.toString().padLeft(2, '0')}';
+
+    final rows = <Map<String, Object?>>[];
+    var tongThuNhap = 0.0;
+    var tongUng = 0.0;
+    var tongTra = 0.0;
+    var soAm = 0;
+
+    for (final worker in _repo.workers(crewId)) {
+      final attendances = _repo.attendances(crewId: crewId, workerId: worker.id);
+      final entries = _repo.entries(crewId: crewId, workerId: worker.id);
+      if (attendances.isEmpty && entries.isEmpty && !worker.isWorking) continue;
+
+      final balance = PayrollCalculator.balance(
+        attendances: attendances,
+        entries: entries,
+      );
+      final thisMonth = PayrollCalculator.monthly(
+        monthKey: monthKey,
+        attendances: attendances,
+        entries: entries,
+      );
+
+      tongThuNhap += balance.totalEarned;
+      tongUng += balance.totalAdvanced;
+      tongTra += balance.totalPaid;
+      if (balance.isNegative) soAm++;
+
+      rows.add({
+        'worker_id': worker.id,
+        'name': worker.name,
+        'station_code': worker.stationCode,
+        'status': worker.status.value,
+        'balance': _balanceJson(balance),
+        'this_month': _monthJson(thisMonth),
+      });
+    }
+
+    return {
+      'month_key': monthKey,
+      'rows': rows,
+      'total_earned': PayrollCalculator.roundMoney(tongThuNhap),
+      'total_advanced': PayrollCalculator.roundMoney(tongUng),
+      'total_paid': PayrollCalculator.roundMoney(tongTra),
+      'total_balance': PayrollCalculator.roundMoney(tongThuNhap - tongUng - tongTra),
+      // Số người đã nhận vượt công đã làm — phải đếm ra, không được im lặng.
+      'negative_count': soAm,
+    };
+  }
+
+  /// Thử một lần ứng trước khi ghi, để màn hình cảnh báo ngay lúc đang nhập.
+  ///
+  /// [ignoreEntryId] là khoản đang sửa: không loại nó ra thì tiền cũ bị đếm hai
+  /// lần, sửa 1 triệu thành 1,1 triệu lại báo vượt trần.
+  Map<String, Object?> previewAdvance({
+    required String crewId,
+    required String workerId,
+    required double amount,
+    DateTime? date,
+    String? ignoreEntryId,
+  }) {
+    _requireCrew(crewId);
+    _requireWorker(crewId, workerId);
+
+    final moc = date ?? DateTime.now();
+    final check = _checkAdvance(
+      crewId: crewId,
+      workerId: workerId,
+      amount: amount,
+      date: moc,
+      ignoreEntryId: ignoreEntryId,
+    );
+
+    return {
+      'requested': check.requested,
+      'allowed': check.allowed,
+      'cap': check.cap,
+      'advanced_before': check.advancedBefore,
+      'income': check.income,
+      'exceeds_cap': check.exceedsCap,
+      'excess': check.excess,
+      'warning': check.warning,
+      // Gợi ý số tròn để đưa tiền mặt cho gọn.
+      'suggested': PayrollCalculator.roundAdvanceDown(check.allowed),
+    };
+  }
+
+  AdvanceCheck _checkAdvance({
+    required String crewId,
+    required String workerId,
+    required double amount,
+    required DateTime date,
+    String? ignoreEntryId,
+  }) {
+    final monthKey = '${date.year}-${date.month.toString().padLeft(2, '0')}';
+    final entries = _repo
+        .entries(crewId: crewId, workerId: workerId)
+        .where((e) => e.id != ignoreEntryId);
+
+    return PayrollCalculator.checkAdvance(
+      month: PayrollCalculator.monthly(
+        monthKey: monthKey,
+        attendances: _repo.attendances(crewId: crewId, workerId: workerId),
+        entries: entries,
+      ),
+      requested: amount,
+    );
+  }
+
+  /// Ghi một khoản tiền: ứng lương, tăng ca, phụ cấp, trừ tiền hay thanh toán.
+  ///
+  /// Riêng ứng lương bị trần 50% thu nhập của **chính tháng đó** chặn lại. Vượt
+  /// trần vẫn cho ghi nhưng **bắt nhập lý do** — chủ quyết định phá luật thì
+  /// phải để lại vết, vì đây là chỗ dễ thất thoát nhất.
+  Map<String, Object?> saveEntry(String crewId, Map<String, Object?> body,
+      {String? createdBy}) {
+    _requireCrew(crewId);
+    final workerId = asString(body['worker_id']);
+    final worker = _requireWorker(crewId, workerId);
+
+    final type = PayrollEntryType.parse(body['type']);
+    final amount = asDoubleOrNull(body['amount']);
+    if (amount == null || amount <= 0) {
+      throw BusinessException('Số tiền phải lớn hơn 0.');
+    }
+
+    final date = asTimeOrNull(body['date']) ?? DateTime.now();
+    final id = asStringOrNull(body['id']);
+    final existing = id == null ? null : _repo.entryById(id);
+    if (existing != null && existing.workerId != workerId) {
+      throw BusinessException('Khoản này thuộc người khác.');
+    }
+    if (existing != null && existing.type != type) {
+      throw BusinessException(
+        'Không đổi được loại khoản đã ghi. Xoá khoản cũ rồi ghi khoản mới.',
+      );
+    }
+
+    var reason = asStringOrNull(body['over_cap_reason'])?.trim();
+    if (reason != null && reason.isEmpty) reason = null;
+
+    if (type == PayrollEntryType.ungLuong) {
+      final check = _checkAdvance(
+        crewId: crewId,
+        workerId: workerId,
+        amount: amount,
+        date: date,
+        ignoreEntryId: existing?.id,
+      );
+      if (check.exceedsCap && reason == null) {
+        throw BusinessException(
+          '${check.warning} Muốn ứng vượt thì phải nhập lý do để lưu vào sổ.',
+        );
+      }
+      // Không vượt trần thì đừng giữ lý do cũ, kẻo sổ đầy cảnh báo giả.
+      if (!check.exceedsCap) reason = null;
+    } else if (reason != null) {
+      throw BusinessException('Chỉ khoản ứng lương mới có lý do vượt trần.');
+    }
+
+    if (type == PayrollEntryType.thanhToan) {
+      final crew = _requireCrew(crewId);
+      if (crew.status != CrewStatus.daHoanThanh) {
+        throw BusinessException(
+          'Trong mùa chỉ ứng lương; quyết toán một lần vào cuối mùa. '
+          'Đóng đoàn "${crew.name}" trước rồi mới thanh toán.',
+        );
+      }
+    }
+
+    final entry = existing == null
+        ? PayrollEntry.create(
+            crewId: crewId,
+            workerId: workerId,
+            type: type,
+            amount: amount,
+            date: date,
+            note: asStringOrNull(body['note']),
+            overCapReason: reason,
+            createdBy: createdBy,
+          )
+        : existing.copyWith(
+            amount: amount,
+            date: date,
+            note: asStringOrNull(body['note']),
+            overCapReason: reason,
+          );
+
+    final saved = _repo.upsertEntry(entry);
+    return {
+      'entry': saved.toJson(),
+      'worker_name': worker.name,
+      ...moneySheet(crewId, workerId),
+    };
+  }
+
+  Map<String, Object?> deleteEntry(String crewId, String entryId) {
+    _requireCrew(crewId);
+    final entry = _repo.entryById(entryId);
+    if (entry == null || entry.deleted) {
+      throw BusinessException('Không tìm thấy khoản tiền.');
+    }
+    if (entry.crewId != crewId) {
+      throw BusinessException('Khoản này không thuộc đoàn hiện tại.');
+    }
+    _repo.softDelete('so_tien', entryId);
+    return moneySheet(crewId, entry.workerId);
+  }
+
+  Map<String, Object?> _monthJson(MonthlyPayroll m) => {
+        'month_key': m.monthKey,
+        'days_worked': m.daysWorked,
+        'work_units': m.workUnits,
+        'wage_earned': m.wageEarned,
+        'overtime': m.overtime,
+        'allowance': m.allowance,
+        'deduction': m.deduction,
+        'income': m.income,
+        'advance_cap': m.advanceCap,
+        'advanced': m.advanced,
+        'remaining_advance': m.remainingAdvance,
+        'over_cap': m.overCap,
+      };
+
+  Map<String, Object?> _balanceJson(WorkerBalance b) => {
+        'total_earned': b.totalEarned,
+        'total_advanced': b.totalAdvanced,
+        'total_paid': b.totalPaid,
+        'total_received': b.totalReceived,
+        'balance': b.balance,
+        'is_negative': b.isNegative,
+      };
+
+  Worker _requireWorker(String crewId, String workerId) {
+    final worker = _repo.workerById(workerId);
+    if (worker == null || worker.deleted) {
+      throw BusinessException('Không tìm thấy nhân viên.');
+    }
+    if (worker.crewId != crewId) {
+      throw BusinessException('Nhân viên "${worker.name}" không thuộc đoàn này.');
+    }
+    return worker;
+  }
+
   Crew _requireCrew(String id) {
     final crew = _repo.crewById(id);
     if (crew == null || crew.deleted) {
