@@ -365,8 +365,12 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
                           title: Text(_wage.phases[i].name),
                           subtitle: Text(
                             'Từ ${formatDate(_wage.phases[i].fromDate)} '
-                            '${_wage.phases[i].toDate == null ? '— chưa chốt ngày kết thúc' : 'đến ${formatDate(_wage.phases[i].toDate)}'}',
+                            '${_wage.phases[i].toDate == null ? '— chưa chốt ngày kết thúc' : 'đến ${formatDate(_wage.phases[i].toDate)}'}\n'
+                            'Ca ${_wage.phases[i].workStart}–${_wage.phases[i].workEnd}, '
+                            'nghỉ ${formatDecimal(_wage.phases[i].breakHours)} giờ '
+                            '→ ${formatDecimal(_wage.phases[i].standardHours)} giờ chuẩn/ngày',
                           ),
+                          isThreeLine: true,
                           trailing: IconButton(
                             icon: const Icon(Icons.edit),
                             onPressed: () => _editPhase(_wage.phases[i]),
@@ -468,6 +472,9 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
           fromDate: result['from'] as DateTime,
           toDate: result['to'] as DateTime?,
           sortOrder: _wage.phases.length,
+          workStart: result['work_start'] as String,
+          workEnd: result['work_end'] as String,
+          breakHours: result['break_hours'] as double,
         )
         .then((_) {}));
   }
@@ -549,6 +556,34 @@ class _PhaseDialogState extends State<_PhaseDialog> {
   late final _name = TextEditingController(text: widget.phase?.name ?? '');
   late DateTime _from = widget.phase?.fromDate ?? DateTime.now();
   late DateTime? _to = widget.phase?.toDate;
+  late String _workStart = widget.phase?.workStart ?? WagePhase.defaultWorkStart;
+  late String _workEnd = widget.phase?.workEnd ?? WagePhase.defaultWorkEnd;
+  late final _breakHours = TextEditingController(
+      text: formatDecimal(widget.phase?.breakHours ?? WagePhase.defaultBreakHours));
+
+  double? get _break => parseNumber(_breakHours.text);
+
+  /// Giờ chuẩn tính sẵn để người khai thấy ngay con số mình đang chốt.
+  double? get _standardHours {
+    final start = WagePhase.parseClock(_workStart);
+    final end = WagePhase.parseClock(_workEnd);
+    final nghi = _break;
+    if (start == null || end == null || nghi == null) return null;
+    final gio = end - start - nghi;
+    return gio > 0 ? gio : null;
+  }
+
+  Future<void> _pickClock({required bool isStart}) async {
+    final current = WagePhase.parseClock(isStart ? _workStart : _workEnd) ?? 7;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: current.floor(), minute: ((current % 1) * 60).round()),
+    );
+    if (picked == null) return;
+    final text = '${picked.hour.toString().padLeft(2, '0')}:'
+        '${picked.minute.toString().padLeft(2, '0')}';
+    setState(() => isStart ? _workStart = text : _workEnd = text);
+  }
 
   Future<void> _pick({required bool isFrom}) async {
     final picked = await showDatePicker(
@@ -606,6 +641,59 @@ class _PhaseDialogState extends State<_PhaseDialog> {
                   'thì một ngày chấm công tra ra hai mức lương khác nhau.',
                   style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
+                const Divider(height: 28),
+                const Text('Giờ làm trong ngày',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: AppTheme.gapSm),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickClock(isStart: true),
+                        icon: const Icon(Icons.login, size: 18),
+                        label: Text('Vào ca $_workStart'),
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.gapSm),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickClock(isStart: false),
+                        icon: const Icon(Icons.logout, size: 18),
+                        label: Text('Tan ca $_workEnd'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.gapSm),
+                TextFormField(
+                  controller: _breakHours,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Tổng giờ nghỉ giữa ca',
+                    helperText: 'Nghỉ trưa 11:30–13:00 là 1,5; thêm nghỉ tối 17:30–19:00 là 3',
+                    suffixText: 'giờ',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  validator: (v) {
+                    final n = parseNumber(v);
+                    if (n == null || n < 0) return 'Nhập số giờ nghỉ, ví dụ 1,5';
+                    if (_standardHours == null) return 'Giờ nghỉ nuốt cả ca — kiểm lại';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: AppTheme.gapSm),
+                Text(
+                  _standardHours == null
+                      ? 'Chưa ra được giờ chuẩn — giờ tan ca phải sau giờ vào ca và '
+                          'giờ nghỉ phải nhỏ hơn cả ca.'
+                      : 'Giờ chuẩn: ${formatDecimal(_standardHours)} giờ/ngày. '
+                          'Ai nghỉ vài giờ thì công tính theo tỷ lệ trên số này.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _standardHours == null ? AppTheme.offline : AppTheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
@@ -615,10 +703,14 @@ class _PhaseDialogState extends State<_PhaseDialog> {
           FilledButton(
             onPressed: () {
               if (!(_formKey.currentState?.validate() ?? false)) return;
+              if (_standardHours == null) return;
               Navigator.pop(context, {
                 'name': _name.text.trim(),
                 'from': _from,
                 'to': _to,
+                'work_start': _workStart,
+                'work_end': _workEnd,
+                'break_hours': _break!,
               });
             },
             child: const Text('Lưu'),

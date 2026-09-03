@@ -8,9 +8,14 @@ import 'wage.dart';
 /// "hôm đó người này có đi làm không". Không có nghỉ phép có lý do: nghỉ ngày
 /// nào là mất công ngày đó.
 ///
-/// Mỗi bản ghi **lưu kèm mức lương tháng và số ngày của tháng tại thời điểm
-/// chấm**. Nhờ vậy sửa bảng mức lương hôm nay không làm lương tháng trước tự
-/// nhảy — lương đã trả rồi mà con số trong máy đổi thì không ai đối chiếu nổi.
+/// Ngoài "có đi làm không", một ngày còn ghi **số giờ nghỉ** trong ngày. Công
+/// của ngày = (giờ chuẩn − giờ nghỉ) ÷ giờ chuẩn; nghỉ 2 giờ trong ca 8,5 giờ
+/// thì hưởng 6,5/8,5 ngày công.
+///
+/// Mỗi bản ghi **lưu kèm mức lương tháng, số ngày của tháng và giờ chuẩn tại
+/// thời điểm chấm**. Nhờ vậy sửa bảng mức lương hay giờ làm hôm nay không làm
+/// lương tháng trước tự nhảy — lương đã trả rồi mà con số trong máy đổi thì
+/// không ai đối chiếu nổi.
 class Attendance {
   const Attendance({
     required this.id,
@@ -22,6 +27,8 @@ class Attendance {
     this.stationCode,
     required this.monthlyAmount,
     required this.daysInMonth,
+    this.hoursOff = 0,
+    this.standardHours = WagePhase.defaultStandardHours,
     this.note,
     this.createdBy,
     required this.updatedAt,
@@ -36,6 +43,8 @@ class Attendance {
     String? phaseId,
     String? stationCode,
     bool present = true,
+    double hoursOff = 0,
+    double standardHours = WagePhase.defaultStandardHours,
     String? note,
     String? createdBy,
   }) {
@@ -50,6 +59,8 @@ class Attendance {
       stationCode: stationCode?.toUpperCase(),
       monthlyAmount: monthlyAmount,
       daysInMonth: daysInMonthOf(day),
+      hoursOff: present ? hoursOff : 0,
+      standardHours: standardHours,
       note: note,
       createdBy: createdBy,
       updatedAt: DateTime.now(),
@@ -66,6 +77,9 @@ class Attendance {
         stationCode: asStringOrNull(json['station_code']),
         monthlyAmount: asDouble(json['monthly_amount']),
         daysInMonth: asInt(json['days_in_month'], fallback: 30),
+        hoursOff: asDouble(json['hours_off']),
+        standardHours: asDouble(json['standard_hours'],
+            fallback: WagePhase.defaultStandardHours),
         note: asStringOrNull(json['note']),
         createdBy: asStringOrNull(json['created_by']),
         updatedAt: asTime(json['updated_at']),
@@ -103,6 +117,13 @@ class Attendance {
   /// Số ngày của tháng tại thời điểm chấm.
   final int daysInMonth;
 
+  /// Số giờ nghỉ trong ngày (đi trễ, về sớm, ra ngoài). Nghỉ cả ngày thì
+  /// dùng [present] chứ không ghi ở đây.
+  final double hoursOff;
+
+  /// Giờ chuẩn của một ngày công tại thời điểm chấm — mẫu số cho [hoursOff].
+  final double standardHours;
+
   final String? note;
   final String? createdBy;
   final DateTime updatedAt;
@@ -111,6 +132,23 @@ class Attendance {
   /// Khoá gộp theo tháng, dạng `2026-09`.
   String get monthKey =>
       '${date.year}-${date.month.toString().padLeft(2, '0')}';
+
+  /// Số giờ làm thực trong ngày.
+  double get hoursWorked {
+    if (!present) return 0;
+    final left = standardHours - hoursOff;
+    return left < 0 ? 0 : left;
+  }
+
+  /// Phần công của ngày: 1 là đủ ngày, 0 là nghỉ, ở giữa là nghỉ vài giờ.
+  double get workUnit {
+    if (!present || standardHours <= 0) return 0;
+    final unit = hoursWorked / standardHours;
+    return unit > 1 ? 1 : unit;
+  }
+
+  /// Đủ ngày, không nghỉ giờ nào.
+  bool get isFullDay => present && hoursOff <= 0;
 
   Map<String, Object?> toJson() => {
         'id': id,
@@ -122,6 +160,8 @@ class Attendance {
         'station_code': stationCode,
         'monthly_amount': monthlyAmount,
         'days_in_month': daysInMonth,
+        'hours_off': hoursOff,
+        'standard_hours': standardHours,
         'note': note,
         'created_by': createdBy,
         'updated_at': timeToMillis(updatedAt),
@@ -133,22 +173,29 @@ class Attendance {
     String? phaseId,
     String? stationCode,
     double? monthlyAmount,
+    double? hoursOff,
+    double? standardHours,
     String? note,
     bool? deleted,
-  }) =>
-      Attendance(
+  }) {
+    final nowPresent = present ?? this.present;
+    return Attendance(
         id: id,
         crewId: crewId,
         workerId: workerId,
         date: date,
-        present: present ?? this.present,
+        present: nowPresent,
         phaseId: phaseId ?? this.phaseId,
         stationCode: stationCode?.toUpperCase() ?? this.stationCode,
         monthlyAmount: monthlyAmount ?? this.monthlyAmount,
         daysInMonth: daysInMonth,
+        // Đổi thành nghỉ cả ngày thì số giờ nghỉ cũ không còn nghĩa.
+        hoursOff: nowPresent ? (hoursOff ?? this.hoursOff) : 0,
+        standardHours: standardHours ?? this.standardHours,
         note: note ?? this.note,
         createdBy: createdBy,
         updatedAt: DateTime.now(),
         deleted: deleted ?? this.deleted,
       );
+  }
 }

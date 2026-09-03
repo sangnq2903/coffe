@@ -67,6 +67,17 @@ class PayrollService {
       ignoreId: existing?.id,
     );
 
+    final workStart = asString(body['work_start'],
+            fallback: existing?.workStart ?? WagePhase.defaultWorkStart)
+        .trim();
+    final workEnd = asString(body['work_end'],
+            fallback: existing?.workEnd ?? WagePhase.defaultWorkEnd)
+        .trim();
+    final breakHours = asDoubleOrNull(body['break_hours']) ??
+        existing?.breakHours ??
+        WagePhase.defaultBreakHours;
+    _assertWorkHours(workStart: workStart, workEnd: workEnd, breakHours: breakHours);
+
     final phase = existing == null
         ? WagePhase.create(
             crewId: crewId,
@@ -74,14 +85,44 @@ class PayrollService {
             fromDate: from,
             toDate: to,
             sortOrder: asInt(body['sort_order']),
+            workStart: workStart,
+            workEnd: workEnd,
+            breakHours: breakHours,
           )
         : existing.copyWith(
             name: name,
             fromDate: from,
             toDate: to,
             sortOrder: asInt(body['sort_order'], fallback: existing.sortOrder),
+            workStart: workStart,
+            workEnd: workEnd,
+            breakHours: breakHours,
           );
     return _repo.upsertPhase(phase);
+  }
+
+  /// Giờ làm phải ra được một số giờ chuẩn dương.
+  ///
+  /// Giờ chuẩn là mẫu số khi ai đó nghỉ vài giờ; khai sai thì chấm công vẫn
+  /// chạy nhưng tiền lệch, nên chặn ngay lúc khai.
+  void _assertWorkHours({
+    required String workStart,
+    required String workEnd,
+    required double breakHours,
+  }) {
+    final start = WagePhase.parseClock(workStart);
+    final end = WagePhase.parseClock(workEnd);
+    if (start == null || end == null) {
+      throw BusinessException('Giờ vào ca và giờ tan ca phải ghi dạng HH:mm, ví dụ 07:00.');
+    }
+    if (end <= start) throw BusinessException('Giờ tan ca phải sau giờ vào ca.');
+    if (breakHours < 0) throw BusinessException('Giờ nghỉ giữa ca không được âm.');
+    if (end - start - breakHours <= 0) {
+      throw BusinessException(
+        'Giờ nghỉ giữa ca ($breakHours giờ) bằng hoặc vượt cả ca làm '
+        '(${end - start} giờ). Kiểm lại giờ vào, giờ về và giờ nghỉ.',
+      );
+    }
   }
 
   /// Hai giai đoạn không được phủ lên cùng một ngày.
@@ -324,6 +365,9 @@ class PayrollService {
         'present': existing?.present,
         'monthly_amount': amount,
         'days_in_month': existing?.daysInMonth ?? Attendance.daysInMonthOf(day),
+        'hours_off': existing?.hoursOff ?? 0,
+        'standard_hours': existing?.standardHours ?? phase?.standardHours,
+        'work_unit': existing?.workUnit,
         'note': existing?.note,
       });
     }
@@ -331,6 +375,7 @@ class PayrollService {
     return {
       'date': timeToMillis(day),
       'days_in_month': Attendance.daysInMonthOf(day),
+      'standard_hours': phase?.standardHours,
       'phase': phase?.toJson(),
       'rows': rows,
       'present_count': rows.where((r) => r['present'] == true).length,
@@ -356,10 +401,15 @@ class PayrollService {
   ///
   /// [marks] là `{id nhân viên: có đi làm}`. Ghi cả người nghỉ (`false`) chứ
   /// không chỉ người đi làm, để phân biệt với ngày chưa chấm.
+  ///
+  /// [hoursOff] là `{id nhân viên: số giờ nghỉ trong ngày}` cho người đi làm
+  /// nhưng không đủ ca. Không gửi thì giữ nguyên số giờ đã ghi; chấm là nghỉ
+  /// cả ngày thì giờ nghỉ tự về 0.
   Map<String, Object?> markDay({
     required String crewId,
     required DateTime date,
     required Map<String, bool> marks,
+    Map<String, double> hoursOff = const {},
     String? note,
     String? createdBy,
   }) {
@@ -389,9 +439,18 @@ class PayrollService {
       }
 
       final existing = _repo.attendanceOn(worker.id, day);
+      final gioNghi = hoursOff[worker.id];
+      if (gioNghi != null && entry.value) {
+        _assertHoursOff(gioNghi, existing?.standardHours ?? phase.standardHours, worker);
+      }
+
       if (existing != null) {
-        // Sửa lại ngày đã chấm thì giữ nguyên mức lương đã chốt lúc đó.
-        _repo.upsertAttendance(existing.copyWith(present: entry.value, note: note));
+        // Sửa lại ngày đã chấm thì giữ nguyên mức lương và giờ chuẩn đã chốt.
+        _repo.upsertAttendance(existing.copyWith(
+          present: entry.value,
+          hoursOff: gioNghi,
+          note: note,
+        ));
         continue;
       }
 
@@ -419,6 +478,8 @@ class PayrollService {
         phaseId: phase.id,
         stationCode: worker.stationCode,
         monthlyAmount: amount,
+        hoursOff: gioNghi ?? 0,
+        standardHours: phase.standardHours,
         note: note,
         createdBy: createdBy,
       ));
@@ -428,6 +489,19 @@ class PayrollService {
       ...daySheet(crewId, day),
       'skipped': skipped,
     };
+  }
+
+  /// Giờ nghỉ phải nằm trong ca; nghỉ hết ca thì phải chấm là nghỉ cả ngày.
+  void _assertHoursOff(double hoursOff, double standardHours, Worker worker) {
+    if (hoursOff < 0) {
+      throw BusinessException('Giờ nghỉ của "${worker.name}" không được âm.');
+    }
+    if (hoursOff >= standardHours) {
+      throw BusinessException(
+        'Giờ nghỉ của "${worker.name}" ($hoursOff giờ) bằng hoặc vượt giờ chuẩn '
+        'của ngày ($standardHours giờ). Nghỉ cả ngày thì chấm là nghỉ.',
+      );
+    }
   }
 
   /// Bảng chấm công cả tháng: mỗi người một dòng, mỗi ngày một ô.
@@ -445,6 +519,7 @@ class PayrollService {
 
     final rows = <Map<String, Object?>>[];
     var totalDays = 0;
+    var totalUnits = 0.0;
     var totalWage = 0.0;
 
     for (final worker in _repo.workers(crewId)) {
@@ -458,8 +533,10 @@ class PayrollService {
       final present = mine.where((a) => a.present).map((a) => a.date.day).toList()..sort();
       final absent = mine.where((a) => !a.present).map((a) => a.date.day).toList()..sort();
       final wage = PayrollCalculator.wageEarnedInMonth(mine);
+      final units = PayrollCalculator.workUnitsInMonth(mine);
 
       totalDays += present.length;
+      totalUnits += units;
       totalWage += wage;
 
       rows.add({
@@ -470,7 +547,14 @@ class PayrollService {
         'status': worker.status.value,
         'present_days': present,
         'absent_days': absent,
+        // Ngày đi làm nhưng nghỉ vài giờ: ghi số giờ làm thực để bảng tháng
+        // hiện "6,5" thay vì dấu ✓ — nhìn vào là biết ngày đó thiếu.
+        'partial_days': {
+          for (final a in mine)
+            if (a.present && a.hoursOff > 0) '${a.date.day}': a.hoursWorked,
+        },
         'days_worked': present.length,
+        'work_units': units,
         'wage_earned': wage,
       });
     }
@@ -481,6 +565,7 @@ class PayrollService {
       'days_in_month': days,
       'rows': rows,
       'total_days_worked': totalDays,
+      'total_work_units': totalUnits,
       'total_wage': PayrollCalculator.roundMoney(totalWage),
     };
   }
@@ -515,15 +600,23 @@ class PayrollService {
         phaseId: phase.id,
         worker: worker,
       );
-      if (amount == null || amount == record.monthlyAmount) continue;
+      if (amount == null) continue;
+      final hours = phase.standardHours;
+      if (amount == record.monthlyAmount && hours == record.standardHours) continue;
 
-      _repo.upsertAttendance(record.copyWith(monthlyAmount: amount, phaseId: phase.id));
+      _repo.upsertAttendance(record.copyWith(
+        monthlyAmount: amount,
+        standardHours: hours,
+        phaseId: phase.id,
+      ));
       changed.add({
         'worker_id': worker.id,
         'name': worker.name,
         'date': timeToMillis(record.date),
         'from': record.monthlyAmount,
         'to': amount,
+        'hours_from': record.standardHours,
+        'hours_to': hours,
       });
     }
 

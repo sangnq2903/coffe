@@ -104,6 +104,49 @@ void main() {
     test('chưa chấm ngày nào thì lương bằng 0', () {
       expect(PayrollCalculator.wageEarnedInMonth(const []), 0);
     });
+
+    test('nghỉ vài giờ thì hưởng theo tỷ lệ trên giờ chuẩn', () {
+      // Ca đầu mùa 8,5 giờ; nghỉ 2 giờ thì còn 6,5/8,5 ngày công.
+      final cong = chamCong(year: 2026, month: 9, days: 30);
+      final nghiHaiGio = cong.first.copyWith(hoursOff: 2, standardHours: 8.5);
+      final thang = [nghiHaiGio, ...cong.skip(1)];
+
+      expect(nghiHaiGio.workUnit, closeTo(6.5 / 8.5, 1e-9));
+      expect(
+        PayrollCalculator.wageEarnedInMonth(thang),
+        (luongDauMua * (29 + 6.5 / 8.5) / 30).round(),
+      );
+      expect(PayrollCalculator.workUnitsInMonth(thang), closeTo(29 + 6.5 / 8.5, 1e-9));
+    });
+
+    test('ca mùa rộ 12 giờ thì cùng số giờ nghỉ mất ít công hơn', () {
+      final dauMua = Attendance.create(
+          crewId: crew, workerId: worker, date: DateTime(2026, 9, 1),
+          monthlyAmount: luongDauMua, hoursOff: 3, standardHours: 8.5);
+      final muaRo = Attendance.create(
+          crewId: crew, workerId: worker, date: DateTime(2026, 11, 1),
+          monthlyAmount: luongMuaRo, hoursOff: 3, standardHours: 12);
+      expect(dauMua.workUnit, lessThan(muaRo.workUnit));
+      expect(muaRo.workUnit, closeTo(9 / 12, 1e-9));
+    });
+
+    test('nghỉ đủ giờ chuẩn thì bằng nghỉ cả ngày, không âm', () {
+      final a = Attendance.create(
+          crewId: crew, workerId: worker, date: DateTime(2026, 9, 1),
+          monthlyAmount: luongDauMua, hoursOff: 10, standardHours: 8.5);
+      expect(a.workUnit, 0);
+      expect(a.hoursWorked, 0);
+    });
+
+    test('đổi thành nghỉ cả ngày thì giờ nghỉ cũ bị xoá', () {
+      final a = Attendance.create(
+          crewId: crew, workerId: worker, date: DateTime(2026, 9, 1),
+          monthlyAmount: luongDauMua, hoursOff: 2);
+      final nghi = a.copyWith(present: false);
+      expect(nghi.hoursOff, 0);
+      // Cho đi làm lại thì bắt đầu từ đủ ngày, không lôi 2 giờ cũ về.
+      expect(nghi.copyWith(present: true).workUnit, 1);
+    });
   });
 
   group('Trần ứng 50%', () {
@@ -365,6 +408,20 @@ void main() {
       expect(muaRo.contains(DateTime(2026, 10, 16)), isTrue);
       expect(muaRo.contains(DateTime(2027, 1, 1)), isTrue,
           reason: 'giai đoạn chưa chốt ngày kết thúc thì còn kéo dài');
+    });
+
+    test('giờ chuẩn tính từ giờ vào, giờ về và giờ nghỉ', () {
+      expect(
+        WagePhase.standardHoursOf(workStart: '07:00', workEnd: '17:00', breakHours: 1.5),
+        8.5,
+      );
+      expect(
+        WagePhase.standardHoursOf(workStart: '07:00', workEnd: '22:00', breakHours: 3),
+        12,
+      );
+      expect(WagePhase.parseClock('17:30'), 17.5);
+      expect(WagePhase.parseClock('25:00'), isNull);
+      expect(WagePhase.parseClock('7h'), isNull);
     });
 
     test('giờ trong ngày không làm lệch kết quả', () {

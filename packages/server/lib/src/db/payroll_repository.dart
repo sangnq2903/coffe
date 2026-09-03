@@ -85,12 +85,13 @@ class PayrollRepository {
   WagePhase upsertPhase(WagePhase phase, {bool dirty = true}) {
     _db.execute('''
       INSERT INTO giai_doan_luong (id, crew_id, name, from_date, to_date, sort_order,
-        updated_at, deleted, dirty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        work_start, work_end, break_hours, updated_at, deleted, dirty)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name, from_date = excluded.from_date, to_date = excluded.to_date,
-        sort_order = excluded.sort_order, updated_at = excluded.updated_at,
-        deleted = excluded.deleted, dirty = excluded.dirty
+        sort_order = excluded.sort_order, work_start = excluded.work_start,
+        work_end = excluded.work_end, break_hours = excluded.break_hours,
+        updated_at = excluded.updated_at, deleted = excluded.deleted, dirty = excluded.dirty
       WHERE excluded.updated_at >= giai_doan_luong.updated_at
     ''', [
       phase.id,
@@ -99,6 +100,9 @@ class PayrollRepository {
       timeToMillis(phase.fromDate),
       timeToMillisOrNull(phase.toDate),
       phase.sortOrder,
+      phase.workStart,
+      phase.workEnd,
+      phase.breakHours,
       timeToMillis(phase.updatedAt),
       phase.deleted ? 1 : 0,
       dirty ? 1 : 0,
@@ -314,12 +318,14 @@ class PayrollRepository {
   Attendance upsertAttendance(Attendance record, {bool dirty = true}) {
     _db.execute('''
       INSERT INTO cham_cong (id, crew_id, worker_id, date, present, phase_id, station_code,
-        monthly_amount, days_in_month, note, created_by, updated_at, deleted, dirty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        monthly_amount, days_in_month, hours_off, standard_hours, note, created_by,
+        updated_at, deleted, dirty)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         present = excluded.present, phase_id = excluded.phase_id,
         station_code = excluded.station_code,
         monthly_amount = excluded.monthly_amount, days_in_month = excluded.days_in_month,
+        hours_off = excluded.hours_off, standard_hours = excluded.standard_hours,
         note = excluded.note, updated_at = excluded.updated_at,
         deleted = excluded.deleted, dirty = excluded.dirty
       WHERE excluded.updated_at >= cham_cong.updated_at
@@ -333,6 +339,8 @@ class PayrollRepository {
       record.stationCode,
       record.monthlyAmount,
       record.daysInMonth,
+      record.hoursOff,
+      record.standardHours,
       record.note,
       record.createdBy,
       timeToMillis(record.updatedAt),

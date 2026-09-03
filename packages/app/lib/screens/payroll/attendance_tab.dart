@@ -70,14 +70,15 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
   /// cần đóng màn hình là mất hết mà không ai biết. Vì vậy cũng **không chặn**
   /// lượt bấm sau trong lúc đang gửi: ô đổi màu ngay tại chỗ, còn phản hồi của
   /// máy chủ về sau mới ghi đè lên.
-  Future<void> _mark(Map<String, bool> marks) async {
+  Future<void> _mark(Map<String, bool> marks,
+      {Map<String, double> hoursOff = const {}}) async {
     final client = _client;
     final sheet = _sheet;
     if (client == null || sheet == null) return;
 
     final ticket = ++_lastSent;
     setState(() {
-      _sheet = _applyLocally(sheet, marks);
+      _sheet = _applyLocally(sheet, marks, hoursOff);
       _inFlight++;
       _error = null;
     });
@@ -87,6 +88,7 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
         crewId: widget.crewId,
         date: _day,
         marks: marks,
+        hoursOff: hoursOff,
       );
       if (!mounted) return;
       // Bảng của lần ghi cũ về muộn thì bỏ, không thì ô vừa bấm bị lùi lại.
@@ -106,9 +108,15 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
   }
 
   /// Đổi màu ô ngay tại chỗ, trước khi máy chủ trả lời.
-  static DaySheet _applyLocally(DaySheet sheet, Map<String, bool> marks) => DaySheet(
+  static DaySheet _applyLocally(
+    DaySheet sheet,
+    Map<String, bool> marks,
+    Map<String, double> hoursOff,
+  ) =>
+      DaySheet(
         date: sheet.date,
         daysInMonth: sheet.daysInMonth,
+        standardHours: sheet.standardHours,
         phase: sheet.phase,
         missingRate: sheet.missingRate,
         rows: [
@@ -116,18 +124,24 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
             if (!marks.containsKey(row.workerId))
               row
             else
-              DayRow(
-                workerId: row.workerId,
-                name: row.name,
-                stationCode: row.stationCode,
-                attendanceId: row.attendanceId,
+              row.copyWith(
                 present: marks[row.workerId],
-                monthlyAmount: row.monthlyAmount,
-                daysInMonth: row.daysInMonth,
-                note: row.note,
+                hoursOff: hoursOff[row.workerId],
               ),
         ],
       );
+
+  /// Ghi số giờ nghỉ trong ngày cho một người đang đi làm.
+  Future<void> _editHours(DayRow row) async {
+    final chuan = row.standardHours;
+    if (chuan == null) return;
+    final result = await showDialog<double>(
+      context: context,
+      builder: (context) => _HoursOffDialog(row: row, standardHours: chuan),
+    );
+    if (result == null || !mounted) return;
+    await _mark({row.workerId: true}, hoursOff: {row.workerId: result});
+  }
 
   void _snack(String message) {
     if (!mounted) return;
@@ -253,15 +267,51 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
 
   Widget _row(DayRow row, bool canMark) {
     final tienNgay = row.dailyAmount;
+    final thieuGio = row.present == true && row.hoursOff > 0;
     return ListTile(
       title: Text(row.name),
-      subtitle: Text([
-        row.stationCode == null ? 'chưa gán kho' : 'Kho ${row.stationCode}',
-        if (tienNgay != null) '${formatMoney(tienNgay)} đ/ngày' else 'chưa tra ra lương',
-      ].join(' • ')),
+      subtitle: Text(
+        [
+          row.stationCode == null ? 'chưa gán kho' : 'Kho ${row.stationCode}',
+          if (tienNgay != null) '${formatMoney(tienNgay)} đ/ngày' else 'chưa tra ra lương',
+          if (thieuGio)
+            'nghỉ ${formatDecimal(row.hoursOff)} giờ → còn '
+                '${formatDecimal(row.hoursWorked)}/${formatDecimal(row.standardHours)} giờ, '
+                'công ${formatDecimal(row.workUnit)}',
+        ].join(' • '),
+        style: thieuGio
+            ? const TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w600)
+            : null,
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Tooltip(
+            message: thieuGio ? 'Sửa giờ nghỉ' : 'Nghỉ vài giờ trong ngày',
+            child: InkWell(
+              onTap: canMark && row.present == true ? () => _editHours(row) : null,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 40,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: thieuGio ? AppTheme.accent.withValues(alpha: 0.16) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: thieuGio ? AppTheme.accent.withValues(alpha: 0.55) : AppTheme.line,
+                  ),
+                ),
+                child: Icon(
+                  Icons.more_time,
+                  size: 20,
+                  color: thieuGio
+                      ? AppTheme.accent
+                      : (row.present == true ? AppTheme.textMuted : AppTheme.line),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
           _markButton(
             row: row,
             value: true,
@@ -492,7 +542,7 @@ class _AttendanceMonthTabState extends State<AttendanceMonthTab> {
             AppTheme.gapMd, 0, AppTheme.gapMd, AppTheme.gapLg),
         children: [
           SectionCard(
-            title: 'Tổng ${sheet.totalDaysWorked} công'
+            title: 'Tổng ${formatDecimal(sheet.totalWorkUnits)} công'
                 ' • ${formatMoney(sheet.totalWage)} đ',
             icon: Icons.table_chart,
             padded: false,
@@ -527,8 +577,8 @@ class _AttendanceMonthTabState extends State<AttendanceMonthTab> {
                     DataRow(cells: [
                       DataCell(_nameCell(row)),
                       for (var d = 1; d <= sheet.daysInMonth; d++)
-                        DataCell(_dayCell(row.stateOf(d))),
-                      DataCell(Text('${row.daysWorked}',
+                        DataCell(_dayCell(row.stateOf(d), row.partialDays[d])),
+                      DataCell(Text(formatDecimal(row.workUnits),
                           style: const TextStyle(fontWeight: FontWeight.w700))),
                       DataCell(Text(formatMoney(row.wageEarned),
                           style: const TextStyle(fontWeight: FontWeight.w700))),
@@ -539,7 +589,8 @@ class _AttendanceMonthTabState extends State<AttendanceMonthTab> {
           ),
           const SizedBox(height: AppTheme.gapSm),
           const Text(
-            'Ô trống là chưa chấm, khác với dấu ✕ là đã chấm nghỉ. '
+            'Ô trống là chưa chấm, khác với dấu ✕ là đã chấm nghỉ. Ô ghi số là ngày '
+            'đi làm nhưng nghỉ vài giờ (số giờ làm thực). '
             'Ngày công của tháng tính bằng số ngày của tháng, kể cả chủ nhật.',
             style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
           ),
@@ -567,11 +618,22 @@ class _AttendanceMonthTabState extends State<AttendanceMonthTab> {
         ),
       );
 
-  Widget _dayCell(bool? state) => switch (state) {
-        true => const Icon(Icons.check, size: 16, color: AppTheme.stable),
-        false => const Icon(Icons.close, size: 16, color: AppTheme.offline),
-        _ => const Text('·', style: TextStyle(color: AppTheme.line)),
-      };
+  /// Ngày đi làm nhưng nghỉ vài giờ hiện số giờ làm thực thay cho dấu ✓ —
+  /// nhìn vào bảng là thấy ngay ngày nào thiếu.
+  Widget _dayCell(bool? state, double? hoursWorked) {
+    if (state == true && hoursWorked != null) {
+      return Text(
+        formatDecimal(hoursWorked),
+        style: const TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.accent),
+      );
+    }
+    return switch (state) {
+      true => const Icon(Icons.check, size: 16, color: AppTheme.stable),
+      false => const Icon(Icons.close, size: 16, color: AppTheme.offline),
+      _ => const Text('·', style: TextStyle(color: AppTheme.line)),
+    };
+  }
 
   bool _isSunday(int day) =>
       DateTime(_month.year, _month.month, day).weekday == DateTime.sunday;
@@ -618,5 +680,88 @@ class _AttendanceMonthTabState extends State<AttendanceMonthTab> {
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     }
+  }
+}
+
+/// Nhập số giờ nghỉ trong ngày.
+///
+/// Chỉ hỏi một con số — người chấm công không ghi giờ đến giờ về, chỉ biết
+/// "hôm nay nghỉ 2 tiếng". Nghỉ hết ca thì phải chấm là nghỉ cả ngày.
+class _HoursOffDialog extends StatefulWidget {
+  const _HoursOffDialog({required this.row, required this.standardHours});
+
+  final DayRow row;
+  final double standardHours;
+
+  @override
+  State<_HoursOffDialog> createState() => _HoursOffDialogState();
+}
+
+class _HoursOffDialogState extends State<_HoursOffDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final _hours = TextEditingController(
+      text: widget.row.hoursOff > 0 ? formatDecimal(widget.row.hoursOff) : '');
+
+  double? get _value => parseNumber(_hours.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final gio = _value;
+    final conLai = gio == null ? null : widget.standardHours - gio;
+    return AlertDialog(
+      title: Text('Giờ nghỉ của ${widget.row.name}'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _hours,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Số giờ nghỉ trong ngày',
+                helperText: 'Ca ${formatDecimal(widget.standardHours)} giờ chuẩn. '
+                    'Nghỉ hết ca thì bấm ✕ chấm nghỉ cả ngày.',
+                suffixText: 'giờ',
+              ),
+              onChanged: (_) => setState(() {}),
+              validator: (v) {
+                final n = parseNumber(v);
+                if (n == null || n < 0) return 'Nhập số giờ, ví dụ 2 hoặc 1,5';
+                if (n >= widget.standardHours) {
+                  return 'Bằng hoặc vượt giờ chuẩn — chấm nghỉ cả ngày thay vì ghi giờ';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: AppTheme.gapSm),
+            if (conLai != null && conLai > 0)
+              Text(
+                'Còn ${formatDecimal(conLai)}/${formatDecimal(widget.standardHours)} giờ '
+                '→ công ${formatDecimal(conLai / widget.standardHours)}',
+                style: const TextStyle(
+                    fontSize: 12.5, color: AppTheme.primary, fontWeight: FontWeight.w600),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        if (widget.row.hoursOff > 0)
+          TextButton(
+            onPressed: () => Navigator.pop(context, 0.0),
+            child: const Text('Đủ ngày'),
+          ),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Huỷ')),
+        FilledButton(
+          onPressed: () {
+            if (!(_formKey.currentState?.validate() ?? false)) return;
+            Navigator.pop(context, _value);
+          },
+          child: const Text('Ghi'),
+        ),
+      ],
+    );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:canxe_server/canxe_server.dart';
+import 'package:canxe_shared/canxe_shared.dart';
 import 'package:shelf/shelf.dart';
 import 'package:test/test.dart';
 
@@ -628,6 +629,140 @@ void main() {
         'date': ngay(2026, 9, 10),
         'marks': {nen['nv']!: true, nguoiDoanB['id']!: true},
       }, expectStatus: 400);
+    });
+
+    test('khai giờ làm cho giai đoạn, giờ chuẩn tự tính ra', () async {
+      final nen = await dungNen();
+      await post('/api/doan/$doanA/giai-doan', {
+        'id': nen['mua_ro'],
+        'name': 'Mùa rộ',
+        'from_date': ngay(2026, 10, 16),
+        'work_start': '07:00',
+        'work_end': '22:00',
+        'break_hours': 3,
+      });
+
+      final bang = (await body(await call('GET', '/api/doan/$doanA/bang-luong',
+          token: tokenTong))) as Map;
+      final phases = (bang['phases'] as List).cast<Map>();
+      final muaRo = WagePhase.fromJson(
+          phases.firstWhere((p) => p['id'] == nen['mua_ro']).cast<String, Object?>());
+      final dauMua = WagePhase.fromJson(
+          phases.firstWhere((p) => p['id'] == nen['dau_mua']).cast<String, Object?>());
+
+      expect(muaRo.standardHours, 12, reason: '7h–22h trừ 3 giờ nghỉ trưa và tối');
+      expect(dauMua.standardHours, 8.5, reason: 'mặc định 7h–17h trừ 1,5 giờ nghỉ trưa');
+    });
+
+    test('giờ làm sai dạng hoặc giờ nghỉ nuốt cả ca thì bị từ chối', () async {
+      await post('/api/doan/$doanA/giai-doan', {
+        'name': 'Sai giờ',
+        'from_date': ngay(2026, 9, 1),
+        'work_start': '7h',
+        'work_end': '17:00',
+      }, expectStatus: 400);
+      await post('/api/doan/$doanA/giai-doan', {
+        'name': 'Nghỉ quá ca',
+        'from_date': ngay(2026, 9, 1),
+        'work_start': '07:00',
+        'work_end': '17:00',
+        'break_hours': 10,
+      }, expectStatus: 400);
+      await post('/api/doan/$doanA/giai-doan', {
+        'name': 'Về trước khi vào',
+        'from_date': ngay(2026, 9, 1),
+        'work_start': '17:00',
+        'work_end': '07:00',
+      }, expectStatus: 400);
+    });
+
+    test('nghỉ vài giờ thì công tính theo tỷ lệ trên giờ chuẩn', () async {
+      final nen = await dungNen();
+      final res = await post('/api/doan/$doanA/cham-cong', {
+        'date': ngay(2026, 9, 1),
+        'marks': {nen['nv']!: true},
+        'hours_off': {nen['nv']!: 2},
+      });
+      final dong = (res['rows'] as List).single as Map;
+      expect(dong['hours_off'], 2);
+      expect(dong['standard_hours'], 8.5);
+      expect(dong['work_unit'], closeTo(6.5 / 8.5, 1e-9));
+
+      final thang = await bangThang();
+      final dongThang = (thang['rows'] as List).single as Map;
+      expect(dongThang['days_worked'], 1, reason: 'vẫn đếm là một ngày có đi làm');
+      expect(dongThang['work_units'], closeTo(6.5 / 8.5, 1e-9));
+      expect(dongThang['wage_earned'], (8000000 * (6.5 / 8.5) / 30).round());
+      expect((dongThang['partial_days'] as Map)['1'], 6.5);
+      expect(thang['total_work_units'], closeTo(6.5 / 8.5, 1e-9));
+    });
+
+    test('không gửi giờ nghỉ thì giữ nguyên số đã ghi', () async {
+      final nen = await dungNen();
+      await post('/api/doan/$doanA/cham-cong', {
+        'date': ngay(2026, 9, 1),
+        'marks': {nen['nv']!: true},
+        'hours_off': {nen['nv']!: 2},
+      });
+      // Bấm "đi làm" lần nữa (ví dụ nút "đi làm hết") không được xoá 2 giờ.
+      final res = await chamCong(nen['nv']!, [1]);
+      expect(((res['rows'] as List).single as Map)['hours_off'], 2);
+    });
+
+    test('chấm là nghỉ cả ngày thì giờ nghỉ tự về 0', () async {
+      final nen = await dungNen();
+      await post('/api/doan/$doanA/cham-cong', {
+        'date': ngay(2026, 9, 1),
+        'marks': {nen['nv']!: true},
+        'hours_off': {nen['nv']!: 2},
+      });
+      final nghi = await chamCong(nen['nv']!, [1], present: false);
+      expect(((nghi['rows'] as List).single as Map)['hours_off'], 0);
+
+      final lamLai = await chamCong(nen['nv']!, [1]);
+      expect(((lamLai['rows'] as List).single as Map)['work_unit'], 1,
+          reason: 'cho đi làm lại thì bắt đầu từ đủ ngày');
+    });
+
+    test('giờ nghỉ bằng hoặc vượt giờ chuẩn thì bị chặn', () async {
+      final nen = await dungNen();
+      for (final gio in [8.5, 9, -1]) {
+        await post('/api/doan/$doanA/cham-cong', {
+          'date': ngay(2026, 9, 1),
+          'marks': {nen['nv']!: true},
+          'hours_off': {nen['nv']!: gio},
+        }, expectStatus: 400);
+      }
+    });
+
+    test('đổi giờ làm hôm nay không đổi công ngày đã chấm, trừ khi bấm tính lại',
+        () async {
+      final nen = await dungNen();
+      await post('/api/doan/$doanA/cham-cong', {
+        'date': ngay(2026, 9, 1),
+        'marks': {nen['nv']!: true},
+        'hours_off': {nen['nv']!: 2},
+      });
+
+      // Đầu mùa đổi thành ca 7h–18h (9,5 giờ chuẩn).
+      await post('/api/doan/$doanA/giai-doan', {
+        'id': nen['dau_mua'],
+        'name': 'Đầu mùa',
+        'from_date': ngay(2026, 9, 1),
+        'to_date': ngay(2026, 10, 15),
+        'work_end': '18:00',
+      });
+
+      var dong = ((await bangThang())['rows'] as List).single as Map;
+      expect(dong['work_units'], closeTo(6.5 / 8.5, 1e-9), reason: 'giữ giờ chuẩn lúc chấm');
+
+      final ketQua = await post('/api/doan/$doanA/cham-cong/tinh-lai',
+          {'year': 2026, 'month': 9});
+      expect(ketQua['count'], 1);
+      expect(((ketQua['changed'] as List).single as Map)['hours_to'], 9.5);
+
+      dong = ((await bangThang())['rows'] as List).single as Map;
+      expect(dong['work_units'], closeTo(7.5 / 9.5, 1e-9));
     });
 
     test('tháng ngoài 1-12 thì bị từ chối', () async {

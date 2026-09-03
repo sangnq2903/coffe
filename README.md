@@ -335,12 +335,17 @@ test thì test sẽ đỏ.
 | **Kho đang làm** | Thuộc tính của **từng người**, đổi được bất cứ lúc nào bằng chức năng **Chuyển kho** (chuyển một người hoặc cả tổ) |
 | **Giai đoạn lương** | Đầu mùa và mùa rộ — khác nhau **mức lương**, dùng chung danh sách người. Mốc chuyển khai bằng ngày |
 | **Mức lương** | Bảng dùng chung ("Thợ chính", "Thợ phụ"). Ai có thoả thuận riêng thì **đặt giá riêng**, không bị ảnh hưởng khi sửa bảng chung |
+| **Giờ làm** | Khai theo giai đoạn: giờ vào ca, giờ tan ca, tổng giờ nghỉ giữa ca → **giờ chuẩn/ngày**. Đầu mùa 7:00–17:00 nghỉ trưa 1,5 giờ = 8,5 giờ; mùa rộ 7:00–22:00 nghỉ trưa + tối 3 giờ = 12 giờ |
 
 ### Tính lương
 
 - **Lương tính theo tháng**, chấm công ghi **theo ngày** (chỉ để biết ai đi ai nghỉ)
 - **Ngày công của tháng = số ngày của tháng** (28/29/30/31), kể cả chủ nhật
 - **Không có nghỉ phép có lý do** — nghỉ ngày nào mất công ngày đó
+- **Nghỉ vài giờ trong ngày** thì ghi số giờ nghỉ; công của ngày = (giờ chuẩn −
+  giờ nghỉ) ÷ giờ chuẩn. Đầu mùa nghỉ 2 giờ → hưởng 6,5/8,5 công; cùng 2 giờ đó
+  ở mùa rộ chỉ mất 2/12 công. Không làm tròn — nhập bao nhiêu tính bấy nhiêu
+- Làm quá giờ tan ca là **tăng ca**, ghi tiền riêng (lớp 4), không cộng vào công
 - Tháng vắt qua hai giai đoạn thì cộng hai phần:
 
 ```
@@ -385,6 +390,13 @@ Màn hình đoàn mở ra là vào ngay tab **Chấm công** — đó là việc
 - Một ngày có **ba trạng thái** cho mỗi người: đi làm (✓), nghỉ (✕) và **chưa
   chấm** (ô trống). "Chưa chấm" là việc còn dở, "nghỉ" là đã chốt — lẫn hai cái
   này thì cuối mùa không biết đã chấm đủ chưa.
+- Người đi làm nhưng không đủ ca thì bấm nút đồng hồ, nhập **số giờ nghỉ**. Giờ
+  nghỉ bằng hoặc vượt giờ chuẩn thì bị chặn — nghỉ hết ca thì chấm là nghỉ.
+  Bấm "đi làm" lại (kể cả "đi làm hết") **không xoá** giờ nghỉ đã ghi; chấm là
+  nghỉ cả ngày thì giờ nghỉ tự về 0.
+- Mỗi ngày chấm công **chép lại giờ chuẩn lúc chấm**, giống mức lương: đổi giờ
+  làm của giai đoạn hôm nay không làm đổi công tháng trước, trừ khi bấm "Tính
+  lại lương".
 - Bấm là ghi ngay, không có nút "Lưu". Chấm cả chục người mà dồn lại rồi lưu thì
   chỉ cần đóng màn hình là mất hết mà không ai biết.
 - **Ngày chưa thuộc giai đoạn lương nào thì không chấm được** — không tra ra

@@ -183,10 +183,17 @@ class PayrollRouter {
         };
         if (marks.isEmpty) return error('Chưa chấm cho ai cả.', 400);
 
+        // `{id: số giờ nghỉ}` — chỉ cho người đi làm nhưng không đủ ca.
+        final rawHours = data['hours_off'];
+        final hoursOff = rawHours is! Map
+            ? const <String, double>{}
+            : {for (final e in rawHours.entries) e.key.toString(): asDouble(e.value)};
+
         return json(service.markDay(
           crewId: id,
           date: ngay,
           marks: marks,
+          hoursOff: hoursOff,
           note: asStringOrNull(data['note']),
           createdBy: user(request).username,
         ));

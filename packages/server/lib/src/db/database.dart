@@ -83,6 +83,31 @@ class AppDatabase {
       _createV4();
       db.execute('PRAGMA user_version = 4;');
     }
+    if (version < 5) {
+      _createV5();
+      db.execute('PRAGMA user_version = 5;');
+    }
+  }
+
+  /// Phiên bản 5: nghỉ theo giờ trong ngày.
+  ///
+  /// Giai đoạn lương khai giờ vào ca, giờ tan ca và giờ nghỉ giữa ca; mỗi ngày
+  /// chấm công ghi số giờ nghỉ và chép lại giờ chuẩn lúc chấm, để đổi giờ làm
+  /// hôm nay không làm đổi công của tháng trước.
+  void _createV5() {
+    for (final sql in [
+      "ALTER TABLE giai_doan_luong ADD COLUMN work_start TEXT NOT NULL DEFAULT '07:00'",
+      "ALTER TABLE giai_doan_luong ADD COLUMN work_end TEXT NOT NULL DEFAULT '17:00'",
+      'ALTER TABLE giai_doan_luong ADD COLUMN break_hours REAL NOT NULL DEFAULT 1.5',
+      'ALTER TABLE cham_cong ADD COLUMN hours_off REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE cham_cong ADD COLUMN standard_hours REAL NOT NULL DEFAULT 8.5',
+    ]) {
+      try {
+        db.execute(sql);
+      } on SqliteException {
+        // Cột đã có sẵn (cơ sở dữ liệu dựng mới bằng lược đồ mới nhất).
+      }
+    }
   }
 
   /// Phiên bản 4: người trong đoàn chuyển kho được tuỳ thời điểm.

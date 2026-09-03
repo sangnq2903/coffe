@@ -6,6 +6,7 @@ class MonthlyPayroll {
   const MonthlyPayroll({
     required this.monthKey,
     required this.daysWorked,
+    this.workUnits = 0,
     required this.wageEarned,
     required this.overtime,
     required this.allowance,
@@ -17,6 +18,9 @@ class MonthlyPayroll {
 
   /// Số ngày đã chấm là có đi làm.
   final int daysWorked;
+
+  /// Số công thực, tính cả ngày nghỉ vài giờ — ví dụ 28,5 công.
+  final double workUnits;
 
   /// Lương theo ngày công đã làm, quy từ lương tháng.
   final double wageEarned;
@@ -124,28 +128,34 @@ abstract final class PayrollCalculator {
   /// tiền của từng ngày. Chia từng ngày rồi cộng lại sẽ lệch: 8.000.000 chia
   /// cho 30 ngày ra số lẻ vô hạn, đi làm đủ tháng lại không ra đúng 8.000.000.
   /// Người ta đếm tiền, lệch vài đồng cũng thành thắc mắc.
+  ///
+  /// Ngày nghỉ vài giờ đóng góp một phần công ([Attendance.workUnit]) chứ không
+  /// phải trọn một ngày.
   static double wageEarnedInMonth(Iterable<Attendance> attendances) {
-    final groups = <String, int>{};
+    final units = <String, double>{};
     final amounts = <String, double>{};
     final divisors = <String, int>{};
 
     for (final a in attendances) {
       if (a.deleted || !a.present) continue;
       final key = '${a.monthlyAmount}|${a.daysInMonth}';
-      groups[key] = (groups[key] ?? 0) + 1;
+      units[key] = (units[key] ?? 0) + a.workUnit;
       amounts[key] = a.monthlyAmount;
       divisors[key] = a.daysInMonth;
     }
 
     var total = 0.0;
-    for (final key in groups.keys) {
-      final days = groups[key]!;
+    for (final key in units.keys) {
       final divisor = divisors[key]!;
       if (divisor <= 0) continue;
-      total += amounts[key]! * days / divisor;
+      total += amounts[key]! * units[key]! / divisor;
     }
     return roundMoney(total);
   }
+
+  /// Tổng công của một tháng, tính cả ngày nghỉ vài giờ.
+  static double workUnitsInMonth(Iterable<Attendance> attendances) =>
+      attendances.where((a) => !a.deleted).fold(0.0, (sum, a) => sum + a.workUnit);
 
   /// Tính lương một tháng của một người.
   ///
@@ -166,6 +176,7 @@ abstract final class PayrollCalculator {
     return MonthlyPayroll(
       monthKey: monthKey,
       daysWorked: ofMonth.where((a) => a.present).length,
+      workUnits: workUnitsInMonth(ofMonth),
       wageEarned: wageEarnedInMonth(ofMonth),
       overtime: sum(PayrollEntryType.tangCa),
       allowance: sum(PayrollEntryType.phuCap),

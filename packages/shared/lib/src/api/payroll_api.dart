@@ -66,6 +66,7 @@ class DaySheet {
   const DaySheet({
     required this.date,
     required this.daysInMonth,
+    this.standardHours,
     this.phase,
     this.rows = const [],
     this.missingRate = const [],
@@ -75,6 +76,7 @@ class DaySheet {
   factory DaySheet.fromJson(Map<String, Object?> json) => DaySheet(
         date: asTime(json['date']),
         daysInMonth: asInt(json['days_in_month'], fallback: 30),
+        standardHours: asDoubleOrNull(json['standard_hours']),
         phase: json['phase'] == null
             ? null
             : WagePhase.fromJson((json['phase']! as Map).cast<String, Object?>()),
@@ -97,6 +99,9 @@ class DaySheet {
 
   final DateTime date;
   final int daysInMonth;
+
+  /// Giờ chuẩn của ngày theo giai đoạn, `null` nếu ngày chưa thuộc giai đoạn.
+  final double? standardHours;
 
   /// Giai đoạn lương của ngày này. `null` nghĩa là chưa khai — chấm công ngày
   /// đó sẽ bị chặn vì không tra ra lương.
@@ -125,6 +130,8 @@ class DayRow {
     this.present,
     this.monthlyAmount,
     required this.daysInMonth,
+    this.hoursOff = 0,
+    this.standardHours,
     this.note,
   });
 
@@ -136,8 +143,27 @@ class DayRow {
         present: json['present'] == null ? null : asBool(json['present']),
         monthlyAmount: asDoubleOrNull(json['monthly_amount']),
         daysInMonth: asInt(json['days_in_month'], fallback: 30),
+        hoursOff: asDouble(json['hours_off']),
+        standardHours: asDoubleOrNull(json['standard_hours']),
         note: asStringOrNull(json['note']),
       );
+
+  DayRow copyWith({bool? present, double? hoursOff}) {
+    final nowPresent = present ?? this.present;
+    return DayRow(
+      workerId: workerId,
+      name: name,
+      stationCode: stationCode,
+      attendanceId: attendanceId,
+      present: nowPresent,
+      monthlyAmount: monthlyAmount,
+      daysInMonth: daysInMonth,
+      // Nghỉ cả ngày thì số giờ nghỉ không còn nghĩa — giống phía máy chủ.
+      hoursOff: nowPresent == true ? (hoursOff ?? this.hoursOff) : 0,
+      standardHours: standardHours,
+      note: note,
+    );
+  }
 
   final String workerId;
   final String name;
@@ -149,12 +175,37 @@ class DayRow {
 
   final double? monthlyAmount;
   final int daysInMonth;
+
+  /// Số giờ nghỉ trong ngày, chỉ có nghĩa khi [present] là `true`.
+  final double hoursOff;
+
+  /// Giờ chuẩn của ngày — đã chốt lúc chấm, hoặc theo giai đoạn nếu chưa chấm.
+  final double? standardHours;
+
   final String? note;
 
   /// Tiền một ngày công, `null` nếu chưa tra ra lương tháng.
   double? get dailyAmount => monthlyAmount == null || daysInMonth <= 0
       ? null
       : monthlyAmount! / daysInMonth;
+
+  /// Số giờ làm thực, `null` nếu chưa chấm hoặc chưa biết giờ chuẩn.
+  double? get hoursWorked {
+    final chuan = standardHours;
+    if (present != true || chuan == null) return null;
+    final left = chuan - hoursOff;
+    return left < 0 ? 0 : left;
+  }
+
+  /// Phần công của ngày: 1 đủ ngày, 0 nghỉ, ở giữa là nghỉ vài giờ.
+  double? get workUnit {
+    if (present == null) return null;
+    if (present == false) return 0;
+    final chuan = standardHours;
+    final lam = hoursWorked;
+    if (chuan == null || chuan <= 0 || lam == null) return 1;
+    return lam / chuan;
+  }
 }
 
 /// Người bị bỏ qua khi chấm công, kèm lý do.
@@ -178,6 +229,7 @@ class MonthSheet {
     required this.daysInMonth,
     this.rows = const [],
     this.totalDaysWorked = 0,
+    this.totalWorkUnits = 0,
     this.totalWage = 0,
   });
 
@@ -187,6 +239,7 @@ class MonthSheet {
         daysInMonth: asInt(json['days_in_month'], fallback: 30),
         rows: asMapList(json['rows']).map(MonthRow.fromJson).toList(),
         totalDaysWorked: asInt(json['total_days_worked']),
+        totalWorkUnits: asDouble(json['total_work_units']),
         totalWage: asDouble(json['total_wage']),
       );
 
@@ -195,6 +248,9 @@ class MonthSheet {
   final int daysInMonth;
   final List<MonthRow> rows;
   final int totalDaysWorked;
+
+  /// Tổng công thực, tính cả ngày nghỉ vài giờ.
+  final double totalWorkUnits;
   final double totalWage;
 }
 
@@ -207,7 +263,9 @@ class MonthRow {
     this.bandName,
     this.presentDays = const {},
     this.absentDays = const {},
+    this.partialDays = const {},
     this.daysWorked = 0,
+    this.workUnits = 0,
     this.wageEarned = 0,
   });
 
@@ -218,12 +276,18 @@ class MonthRow {
         bandName: asStringOrNull(json['band_name']),
         presentDays: _days(json['present_days']),
         absentDays: _days(json['absent_days']),
+        partialDays: _partial(json['partial_days']),
         daysWorked: asInt(json['days_worked']),
+        workUnits: asDouble(json['work_units']),
         wageEarned: asDouble(json['wage_earned']),
       );
 
   static Set<int> _days(Object? raw) =>
       raw is List ? raw.map((e) => asInt(e)).toSet() : const {};
+
+  static Map<int, double> _partial(Object? raw) => raw is Map
+      ? {for (final e in raw.entries) asInt(e.key): asDouble(e.value)}
+      : const {};
 
   final String workerId;
   final String name;
@@ -236,7 +300,13 @@ class MonthRow {
   /// Ngày đã chấm là nghỉ — khác với ngày chưa chấm.
   final Set<int> absentDays;
 
+  /// Ngày đi làm nhưng nghỉ vài giờ: `{ngày: số giờ làm thực}`.
+  final Map<int, double> partialDays;
+
   final int daysWorked;
+
+  /// Số công thực, ví dụ 28,5.
+  final double workUnits;
   final double wageEarned;
 
   /// Trạng thái một ngày: `true` đi làm, `false` nghỉ, `null` chưa chấm.
@@ -330,6 +400,9 @@ extension PayrollApi on ApiClient {
     required DateTime fromDate,
     DateTime? toDate,
     int sortOrder = 0,
+    String? workStart,
+    String? workEnd,
+    double? breakHours,
   }) async =>
       WagePhase.fromJson(await postMap('/api/doan/$crewId/giai-doan', {
         if (id != null) 'id': id,
@@ -337,6 +410,9 @@ extension PayrollApi on ApiClient {
         'from_date': timeToMillis(fromDate),
         'to_date': timeToMillisOrNull(toDate),
         'sort_order': sortOrder,
+        if (workStart != null) 'work_start': workStart,
+        if (workEnd != null) 'work_end': workEnd,
+        if (breakHours != null) 'break_hours': breakHours,
       }));
 
   Future<void> deletePhase(String crewId, String phaseId) =>
@@ -442,11 +518,13 @@ extension PayrollApi on ApiClient {
     required String crewId,
     required DateTime date,
     required Map<String, bool> marks,
+    Map<String, double> hoursOff = const {},
     String? note,
   }) async =>
       DaySheet.fromJson(await postMap('/api/doan/$crewId/cham-cong', {
         'date': timeToMillis(date),
         'marks': marks,
+        if (hoursOff.isNotEmpty) 'hours_off': hoursOff,
         'note': note,
       }));
 
