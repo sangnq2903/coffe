@@ -6,11 +6,26 @@ import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../state/server_connection.dart';
 
+/// Nhóm người đang xem trong bảng chấm công ngày.
+enum _DayFilter {
+  tatCa('Tất cả'),
+  chuaCham('Chưa chấm'),
+  daCham('Đã chấm');
+
+  const _DayFilter(this.label);
+
+  final String label;
+}
+
 /// Chấm công theo ngày.
 ///
 /// Mỗi ngày chỉ trả lời một câu: hôm đó ai đi làm. Ba trạng thái — đi làm, nghỉ,
 /// và **chưa chấm** — phải phân biệt được, vì "chưa chấm" là việc còn dở còn
 /// "nghỉ" là đã chốt.
+///
+/// Đoàn đông thì cuộn tìm từng người rất lâu, nên có ô tìm tên (gõ không dấu
+/// vẫn ra) và ba nhóm lọc. Nhóm "Chưa chấm" là danh sách việc còn phải làm:
+/// chấm xong ai thì người đó rời khỏi nhóm, hết danh sách là xong ngày.
 class AttendanceDayTab extends StatefulWidget {
   const AttendanceDayTab({super.key, required this.crewId});
 
@@ -21,7 +36,10 @@ class AttendanceDayTab extends StatefulWidget {
 }
 
 class _AttendanceDayTabState extends State<AttendanceDayTab> {
+  final _search = TextEditingController();
+
   DateTime _day = DateTime.now();
+  _DayFilter _filter = _DayFilter.tatCa;
   DaySheet? _sheet;
   bool _loading = false;
   int _inFlight = 0;
@@ -41,6 +59,30 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// Người khớp ô tìm tên, chưa lọc theo nhóm.
+  ///
+  /// Tách riêng để số trên ba nhóm đếm đúng phạm vi đang xem: tìm "tinh" thì
+  /// "Chưa chấm (1)" nói về mình Tình, chứ không phải cả đoàn.
+  List<DayRow> _matchingSearch(DaySheet sheet) {
+    final q = normalizeForSearch(_search.text);
+    if (q.isEmpty) return sheet.rows;
+    return sheet.rows.where((r) => normalizeForSearch(r.name).contains(q)).toList();
+  }
+
+  List<DayRow> _visible(DaySheet sheet) => switch (_filter) {
+        _DayFilter.tatCa => _matchingSearch(sheet),
+        _DayFilter.chuaCham =>
+          _matchingSearch(sheet).where((r) => r.present == null).toList(),
+        _DayFilter.daCham =>
+          _matchingSearch(sheet).where((r) => r.present != null).toList(),
+      };
 
   Future<void> _load() async {
     final client = _client;
@@ -151,9 +193,11 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
   @override
   Widget build(BuildContext context) {
     final sheet = _sheet;
+    final visible = sheet == null ? const <DayRow>[] : _visible(sheet);
     return Column(
       children: [
         _dayBar(),
+        if (sheet != null && sheet.rows.isNotEmpty) _searchBar(sheet),
         if (_loading || _inFlight > 0) const LinearProgressIndicator(minHeight: 2),
         if (_error != null)
           Padding(
@@ -174,29 +218,98 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
                           ' • Đi làm ${sheet.presentCount}',
                       icon: Icons.how_to_reg,
                       padded: false,
-                      trailing: sheet.rows.isEmpty || sheet.phase == null
+                      trailing: visible.isEmpty || sheet.phase == null
                           ? null
-                          : _bulkButtons(sheet),
+                          : _bulkButtons(sheet, visible),
                       child: sheet.rows.isEmpty
                           ? const EmptyHint(
                               icon: Icons.person_off_outlined,
                               message: 'Ngày này không có ai trong đoàn.\n'
                                   'Kiểm lại ngày vào làm của nhân viên.',
                             )
-                          : Column(
-                              children: [
-                                for (var i = 0; i < sheet.rows.length; i++) ...[
-                                  if (i > 0) const Divider(height: 1),
-                                  _row(sheet.rows[i], sheet.phase != null),
-                                ],
-                              ],
-                            ),
+                          : visible.isEmpty
+                              ? EmptyHint(
+                                  icon: Icons.search_off,
+                                  message: _emptyMessage(),
+                                )
+                              : Column(
+                                  children: [
+                                    for (var i = 0; i < visible.length; i++) ...[
+                                      if (i > 0) const Divider(height: 1),
+                                      _row(visible[i], sheet.phase != null),
+                                    ],
+                                  ],
+                                ),
                     ),
                   ],
                 ),
         ),
       ],
     );
+  }
+
+  /// Ô tìm tên và ba nhóm lọc.
+  Widget _searchBar(DaySheet sheet) {
+    final khop = _matchingSearch(sheet);
+    final chua = khop.where((r) => r.present == null).length;
+    final da = khop.length - chua;
+    final dem = {
+      _DayFilter.tatCa: khop.length,
+      _DayFilter.chuaCham: chua,
+      _DayFilter.daCham: da,
+    };
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppTheme.gapMd, 0, AppTheme.gapMd, AppTheme.gapSm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _search,
+            decoration: InputDecoration(
+              labelText: 'Tìm tên để chấm riêng',
+              helperText: 'Gõ không dấu cũng ra — "tinh" tìm được "Tình"',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _search.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Xoá tìm kiếm',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => setState(_search.clear),
+                    ),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: AppTheme.gapSm),
+          SingleChildScrollView(
+            // Ba nhóm kèm số đếm dễ rộng hơn màn hình điện thoại.
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<_DayFilter>(
+              segments: [
+                for (final f in _DayFilter.values)
+                  ButtonSegment(value: f, label: Text('${f.label} (${dem[f]})')),
+              ],
+              selected: {_filter},
+              showSelectedIcon: false,
+              onSelectionChanged: (chon) => setState(() => _filter = chon.first),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _emptyMessage() {
+    if (_search.text.trim().isNotEmpty) {
+      return 'Không có ai tên khớp "${_search.text.trim()}"\n'
+          'trong nhóm "${_filter.label}".';
+    }
+    return switch (_filter) {
+      _DayFilter.chuaCham => 'Đã chấm hết cả đoàn cho ngày này.',
+      _DayFilter.daCham => 'Chưa chấm cho ai trong ngày này.',
+      _DayFilter.tatCa => 'Không có ai để chấm.',
+    };
   }
 
   Widget _dayBar() {
@@ -251,19 +364,27 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
     );
   }
 
-  Widget _bulkButtons(DaySheet sheet) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextButton(
-            onPressed: () => _mark({for (final r in sheet.rows) r.workerId: true}),
-            child: const Text('Đi làm hết'),
-          ),
-          TextButton(
-            onPressed: () => _mark({for (final r in sheet.rows) r.workerId: false}),
-            child: const Text('Nghỉ hết'),
-          ),
-        ],
-      );
+  /// Hai nút chấm hàng loạt, chỉ tác động lên **những người đang hiện**.
+  ///
+  /// Lọc "Chưa chấm" rồi bấm "Đi làm" là chấm đúng số người còn lại, không đụng
+  /// tới ai đã chấm — nên nhãn phải nói rõ số người, kẻo tưởng là cả đoàn.
+  Widget _bulkButtons(DaySheet sheet, List<DayRow> visible) {
+    final locHep = visible.length != sheet.rows.length;
+    final hau = locHep ? ' ${visible.length} người' : ' hết';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextButton(
+          onPressed: () => _mark({for (final r in visible) r.workerId: true}),
+          child: Text('Đi làm$hau'),
+        ),
+        TextButton(
+          onPressed: () => _mark({for (final r in visible) r.workerId: false}),
+          child: Text('Nghỉ$hau'),
+        ),
+      ],
+    );
+  }
 
   Widget _row(DayRow row, bool canMark) {
     final tienNgay = row.dailyAmount;

@@ -35,6 +35,37 @@ String formatTime(DateTime? value) =>
 String formatDate(DateTime? value) =>
     value == null ? '—' : _dateFormat.format(value);
 
+/// Bảng quy các nguyên âm có dấu về nguyên âm trần, dùng cho việc tìm tên.
+const Map<String, String> _khongDau = {
+  'a': 'àáạảãâầấậẩẫăằắặẳẵ',
+  'e': 'èéẹẻẽêềếệểễ',
+  'i': 'ìíịỉĩ',
+  'o': 'òóọỏõôồốộổỗơờớợởỡ',
+  'u': 'ùúụủũưừứựửữ',
+  'y': 'ỳýỵỷỹ',
+  'd': 'đ',
+};
+
+/// Đưa chuỗi về dạng để so khi tìm kiếm: chữ thường, bỏ dấu, gộp khoảng trắng.
+///
+/// Người dùng gõ nhanh trên bàn phím thường không bật bộ gõ tiếng Việt, nên
+/// "tinh" phải tìm ra "Tình" — không bỏ dấu thì tìm tên gần như vô dụng.
+String normalizeForSearch(String? raw) {
+  if (raw == null) return '';
+  final buffer = StringBuffer();
+  for (final ch in raw.toLowerCase().trim().split('')) {
+    var plain = ch;
+    for (final entry in _khongDau.entries) {
+      if (entry.value.contains(ch)) {
+        plain = entry.key;
+        break;
+      }
+    }
+    buffer.write(plain);
+  }
+  return buffer.toString().replaceAll(RegExp(r'\s+'), ' ');
+}
+
 /// Đọc số người dùng gõ vào, chấp nhận cả kiểu Việt Nam (`12.345,6`) lẫn kiểu
 /// Anh Mỹ (`12,345.6`) và cả khi không có dấu phân cách nào.
 ///

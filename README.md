@@ -390,6 +390,12 @@ Màn hình đoàn mở ra là vào ngay tab **Chấm công** — đó là việc
 - Một ngày có **ba trạng thái** cho mỗi người: đi làm (✓), nghỉ (✕) và **chưa
   chấm** (ô trống). "Chưa chấm" là việc còn dở, "nghỉ" là đã chốt — lẫn hai cái
   này thì cuối mùa không biết đã chấm đủ chưa.
+- Đoàn đông thì dùng **ô tìm tên** để chấm riêng một người (gõ không dấu cũng
+  ra: "tinh" tìm được "Tình") và ba nhóm **Tất cả / Chưa chấm / Đã chấm**. Nhóm
+  "Chưa chấm" là danh sách việc còn phải làm — chấm xong ai thì người đó rời
+  khỏi nhóm, hết danh sách là xong ngày.
+- Hai nút chấm hàng loạt chỉ tác động lên **những người đang hiện**, và nhãn ghi
+  rõ số người ("Đi làm 5 người") khi đang lọc hoặc đang tìm.
 - Người đi làm nhưng không đủ ca thì bấm nút đồng hồ, nhập **số giờ nghỉ**. Giờ
   nghỉ bằng hoặc vượt giờ chuẩn thì bị chặn — nghỉ hết ca thì chấm là nghỉ.
   Bấm "đi làm" lại (kể cả "đi làm hết") **không xoá** giờ nghỉ đã ghi; chấm là
