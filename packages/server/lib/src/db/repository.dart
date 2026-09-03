@@ -12,6 +12,70 @@ class Repository {
 
   Database get _db => _appDb.db;
 
+  // ============================================================ tài khoản
+
+  List<AppUser> users({bool includeMachine = false, bool includeInactive = false}) {
+    final where = <String>['deleted = 0'];
+    if (!includeMachine) where.add('machine_account = 0');
+    if (!includeInactive) where.add('active = 1');
+    final rows = _db.select(
+      'SELECT * FROM nguoi_dung WHERE ${where.join(" AND ")} ORDER BY username',
+    );
+    return rows.map((r) => AppUser.fromJson(r)).toList();
+  }
+
+  AppUser? userById(String id) {
+    final rows = _db.select('SELECT * FROM nguoi_dung WHERE id = ?', [id]);
+    return rows.isEmpty ? null : AppUser.fromJson(rows.first);
+  }
+
+  /// Tìm theo tên đăng nhập, không phân biệt hoa thường.
+  AppUser? userByUsername(String username) {
+    final rows = _db.select(
+      'SELECT * FROM nguoi_dung WHERE lower(username) = ? AND deleted = 0 LIMIT 1',
+      [username.trim().toLowerCase()],
+    );
+    return rows.isEmpty ? null : AppUser.fromJson(rows.first);
+  }
+
+  /// Số tài khoản người thật đang có — dùng để biết đã cần màn hình tạo chủ chưa.
+  int humanUserCount() => _db
+      .select('SELECT COUNT(*) AS c FROM nguoi_dung WHERE deleted = 0 AND machine_account = 0')
+      .first['c'] as int;
+
+  AppUser upsertUser(AppUser user, {bool dirty = true}) {
+    _db.execute('''
+      INSERT INTO nguoi_dung (id, username, full_name, role, station_scope, active,
+        machine_account, password_hash, salt, iterations, updated_at, deleted, dirty)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        username = excluded.username, full_name = excluded.full_name,
+        role = excluded.role, station_scope = excluded.station_scope,
+        active = excluded.active, machine_account = excluded.machine_account,
+        password_hash = excluded.password_hash, salt = excluded.salt,
+        iterations = excluded.iterations, updated_at = excluded.updated_at,
+        deleted = excluded.deleted, dirty = excluded.dirty
+      WHERE excluded.updated_at >= nguoi_dung.updated_at
+    ''', [
+      user.id,
+      user.username,
+      user.fullName,
+      user.role.value,
+      user.stationScope.join(','),
+      user.active ? 1 : 0,
+      user.machineAccount ? 1 : 0,
+      user.passwordHash ?? '',
+      user.salt ?? '',
+      user.iterations,
+      timeToMillis(user.updatedAt),
+      user.deleted ? 1 : 0,
+      dirty ? 1 : 0,
+    ]);
+    return userById(user.id) ?? user;
+  }
+
+  void softDeleteUser(String id) => _softDelete('nguoi_dung', id);
+
   // ============================================================== khách hàng
 
   List<Customer> customers({String? query, bool includeInactive = false}) {
@@ -223,6 +287,7 @@ class Repository {
 
   List<WeighTicket> tickets({
     String? stationCode,
+    List<String>? allowedStations,
     TicketStatus? status,
     String? query,
     DateTime? from,
@@ -235,6 +300,14 @@ class Repository {
     if (stationCode != null && stationCode.isNotEmpty) {
       where.add('station_code = ?');
       args.add(stationCode);
+    }
+    // Giới hạn theo phạm vi kho của tài khoản. `null` nghĩa là không giới hạn;
+    // danh sách rỗng nghĩa là không được xem kho nào, phải trả về rỗng chứ
+    // tuyệt đối không được hiểu thành "xem tất cả".
+    if (allowedStations != null) {
+      if (allowedStations.isEmpty) return const [];
+      where.add('station_code IN (${List.filled(allowedStations.length, '?').join(',')})');
+      args.addAll(allowedStations);
     }
     if (status != null) {
       where.add('status = ?');
@@ -270,6 +343,7 @@ class Repository {
   /// Phiếu đang chờ cân lần 2 của một biển số — dùng để tự nhận diện xe quay
   /// lại bàn cân mà nhân viên không phải tìm tay.
   WeighTicket? pendingTicketForPlate(String plateNo, {String? stationCode}) {
+    // Không giới hạn phạm vi ở đây vì bên gọi đã chốt sẵn một kho cụ thể.
     final rows = _db.select(
       'SELECT * FROM tickets WHERE plate_no = ? AND status = ? AND deleted = 0 '
       '${stationCode != null ? "AND station_code = ?" : ""} '
@@ -362,24 +436,47 @@ class Repository {
   // =============================================================== đồng bộ
 
   /// Lấy các bản ghi thay đổi sau mốc [since] để đẩy sang bên kia.
-  SyncPayload changesSince(DateTime? since, {String? stationCode, int limit = 500}) {
+  SyncPayload changesSince(
+    DateTime? since, {
+    String? stationCode,
+    List<String>? allowedStations,
+    int limit = 500,
+  }) {
     final ms = timeToMillis(since ?? DateTime.fromMillisecondsSinceEpoch(0));
+
+    // Gộp bộ lọc kho của lời gọi và phạm vi kho của tài khoản. Máy trạm kho 1
+    // kéo dữ liệu về sẽ không nhận được phiếu cân của kho 2 — nhờ vậy ổ cứng
+    // máy ở kho không lưu dữ liệu của kho khác, chứ không chỉ giấu trên màn hình.
+    final stations = <String>{
+      if (stationCode != null && stationCode.isNotEmpty) stationCode,
+    };
+    if (allowedStations != null) {
+      if (stations.isEmpty) {
+        stations.addAll(allowedStations);
+      } else {
+        stations.retainWhere(allowedStations.contains);
+      }
+    }
+    final limitByStation = stationCode != null || allowedStations != null;
+
     List<T> load<T>(String table, T Function(Map<String, Object?>) parse, {bool byStation = false}) {
-      final filter = byStation && stationCode != null && stationCode.isNotEmpty
-          ? 'AND station_code = ?'
+      if (byStation && limitByStation && stations.isEmpty) return <T>[];
+      final filter = byStation && limitByStation
+          ? 'AND station_code IN (${List.filled(stations.length, '?').join(',')})'
           : '';
       final rows = _db.select(
         'SELECT * FROM $table WHERE updated_at > ? $filter ORDER BY updated_at LIMIT ?',
-        [ms, if (filter.isNotEmpty) stationCode, limit],
+        [ms, if (filter.isNotEmpty) ...stations, limit],
       );
       return rows.map((r) => parse(r)).toList();
     }
 
     return SyncPayload(
+      users: load('nguoi_dung', AppUser.fromJson),
       customers: load('customers', Customer.fromJson),
       vehicles: load('vehicles', Vehicle.fromJson),
       goodsTypes: load('goods_types', GoodsType.fromJson),
-      tickets: load('tickets', WeighTicket.fromJson),
+      tickets: load('tickets', WeighTicket.fromJson, byStation: true),
       serverTime: DateTime.now(),
     );
   }
@@ -392,6 +489,7 @@ class Repository {
         .toList();
 
     return SyncPayload(
+      users: load('nguoi_dung', AppUser.fromJson),
       customers: load('customers', Customer.fromJson),
       vehicles: load('vehicles', Vehicle.fromJson),
       goodsTypes: load('goods_types', GoodsType.fromJson),
@@ -401,7 +499,7 @@ class Repository {
 
   int pendingPushCount() {
     var total = 0;
-    for (final table in ['customers', 'vehicles', 'goods_types', 'tickets']) {
+    for (final table in ['nguoi_dung', 'customers', 'vehicles', 'goods_types', 'tickets']) {
       total += _db.select('SELECT COUNT(*) AS c FROM $table WHERE dirty = 1').first['c'] as int;
     }
     return total;
@@ -414,6 +512,10 @@ class Repository {
   int applyPayload(SyncPayload payload, {bool markDirty = false}) {
     var applied = 0;
     _transaction(() {
+      for (final u in payload.users) {
+        upsertUser(u, dirty: markDirty);
+        applied++;
+      }
       for (final c in payload.customers) {
         upsertCustomer(c, dirty: markDirty);
         applied++;
@@ -443,11 +545,26 @@ class Repository {
         }
       }
 
+      clear('nguoi_dung', pushed.users.map((e) => e.id));
       clear('customers', pushed.customers.map((e) => e.id));
       clear('vehicles', pushed.vehicles.map((e) => e.id));
       clear('goods_types', pushed.goodsTypes.map((e) => e.id));
       clear('tickets', pushed.tickets.map((e) => e.id));
     });
+  }
+
+  /// Đọc/ghi một giá trị cấu hình nội bộ của máy chủ (không đồng bộ đi đâu).
+  String? state(String key) {
+    final rows = _db.select('SELECT value FROM sync_state WHERE key = ?', [key]);
+    return rows.isEmpty ? null : rows.first['value']?.toString();
+  }
+
+  void setState(String key, String value) {
+    _db.execute(
+      'INSERT INTO sync_state (key, value) VALUES (?, ?) '
+      'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      [key, value],
+    );
   }
 
   DateTime? syncMark(String key) {

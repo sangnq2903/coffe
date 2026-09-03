@@ -9,12 +9,14 @@ import 'package:shelf_static/shelf_static.dart';
 
 import 'api/api_router.dart';
 import 'api/reading_broker.dart';
+import 'auth/auth_service.dart';
 import 'config.dart';
 import 'db/database.dart';
 import 'db/repository.dart';
 import 'logging.dart';
 import 'scale/scale_service.dart';
 import 'service/ticket_service.dart';
+import 'sync/central_session.dart';
 import 'sync/station_uplink.dart';
 import 'sync/sync_worker.dart';
 
@@ -28,6 +30,7 @@ class ServerApp {
   late final Repository _repo;
   late final ReadingBroker _broker;
   late final TicketService _ticketService;
+  late final AuthService _auth;
   ScaleService? _scale;
   SyncWorker? _sync;
   StationUplink? _uplink;
@@ -45,6 +48,10 @@ class ServerApp {
     _repo.seedGoodsTypesIfEmpty();
     _broker = ReadingBroker();
     _ticketService = TicketService(_repo, defaultStationCode: config.effectiveStationCode);
+    _auth = AuthService(_repo);
+    // Chạm vào khoá ký ngay lúc khởi động để nó được sinh và ghi lại một lần,
+    // thay vì sinh lúc có người đăng nhập giữa ca.
+    _auth.secret;
 
     _registerSelf();
 
@@ -57,6 +64,7 @@ class ServerApp {
       repo: _repo,
       broker: _broker,
       tickets: _ticketService,
+      auth: _auth,
       scale: _scale,
       sync: _sync,
     );
@@ -64,6 +72,7 @@ class ServerApp {
     final handler = Pipeline()
         .addMiddleware(logRequests(logger: _logRequest))
         .addMiddleware(corsMiddleware())
+        .addMiddleware(authMiddleware(_auth))
         .addHandler(Cascade().add(router.handler).add(_webHandler()).handler);
 
     _httpServer = await shelf_io.serve(handler, config.host, config.port, shared: true);
@@ -83,8 +92,11 @@ class ServerApp {
     // khung đầu tiên từ đầu cân.
     _broker.publish(scale.current);
 
-    _sync = SyncWorker(config: config, repo: _repo)..start();
-    _uplink = StationUplink(config: config, readings: scale.readings)..start();
+    // Một phiên đăng nhập dùng chung cho cả đồng bộ dữ liệu lẫn kênh số cân.
+    final session = CentralSession(config: config);
+    _sync = SyncWorker(config: config, repo: _repo, session: session)..start();
+    _uplink = StationUplink(config: config, readings: scale.readings, session: session)
+      ..start();
   }
 
   /// Ghi chính máy này vào bảng trạm để màn hình chọn trạm luôn có ít nhất một
@@ -161,6 +173,9 @@ class ServerApp {
   }
 
   void _logRequest(String message, bool isError) {
+    // Phiếu phiên đi qua địa chỉ với WebSocket; ghi nguyên vào log là để lộ
+    // chìa khoá đăng nhập cho bất kỳ ai đọc được file nhật ký.
+    message = message.replaceAll(RegExp(r'token=[^\s&]+'), 'token=***');
     if (isError) {
       AppLog.error(message);
     }
@@ -190,6 +205,11 @@ class ServerApp {
       if (config.isStation) '  Đầu cân      : $scale',
       if (config.isStation) '  Trung tâm    : ${config.centralUrl}',
       if (AppLog.path != null) '  Nhật ký      : ${AppLog.path}',
+      if (_auth.needsSetup)
+        '  >> Chưa có tài khoản nào. Mở trang web để tạo tài khoản quản lý tổng.',
+      if (config.missingCentralAccount)
+        '  >> Chưa khai central.username / central.password — trạm vẫn cân bình '
+            'thường nhưng CHƯA đồng bộ được lên trung tâm.',
       '  ${'-' * 58}',
       '  Nhấn Ctrl+C để dừng.',
       '',

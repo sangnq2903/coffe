@@ -209,7 +209,7 @@ class _WeighScreenState extends State<WeighScreen> {
         'yield_ratio': parseNumber(_yieldController.text) ?? 100,
         'first_weight': weight,
         'note': _noteController.text,
-        'created_by': _conn.settings.operatorName,
+        // Người lập phiếu do máy chủ điền từ tài khoản đang đăng nhập.
       });
       _clearForm();
       await _loadTickets();

@@ -10,7 +10,7 @@ class AppSettings extends ChangeNotifier {
 
   static const _kServerUrl = 'server_url';
   static const _kStationCode = 'station_code';
-  static const _kOperator = 'operator_name';
+  static const _kAuthToken = 'auth_token';
 
   static Future<AppSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -28,13 +28,16 @@ class AppSettings extends ChangeNotifier {
   /// Mã trạm đang theo dõi số cân.
   String get stationCode => _prefs.getString(_kStationCode) ?? '';
 
-  /// Tên người cân, ghi vào phiếu để biết ai lập.
-  String get operatorName => _prefs.getString(_kOperator) ?? '';
-
-  bool get isConfigured => serverUrl.isNotEmpty || kIsWeb;
+  /// Phiếu phiên đăng nhập.
+  ///
+  /// Giữ lại giữa các lần mở app để nhân viên ở kho không phải đăng nhập mỗi
+  /// sáng — phiên có hạn 30 ngày, hết hạn máy chủ tự từ chối.
+  String get authToken => _prefs.getString(_kAuthToken) ?? '';
 
   Future<void> setServerUrl(String value) async {
     await _prefs.setString(_kServerUrl, value.trim());
+    // Đổi máy chủ thì phiếu phiên cũ vô dụng: mỗi máy chủ ký bằng khoá riêng.
+    await _prefs.remove(_kAuthToken);
     notifyListeners();
   }
 
@@ -43,8 +46,13 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setOperatorName(String value) async {
-    await _prefs.setString(_kOperator, value.trim());
+  Future<void> setAuthToken(String value) async {
+    await _prefs.setString(_kAuthToken, value);
+    notifyListeners();
+  }
+
+  Future<void> clearAuthToken() async {
+    await _prefs.remove(_kAuthToken);
     notifyListeners();
   }
 }

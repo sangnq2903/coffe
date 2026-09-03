@@ -128,6 +128,8 @@ class ServerConfig {
     this.address,
     this.publicBaseUrl,
     this.centralUrl,
+    this.centralUsername,
+    this.centralPassword,
     this.syncIntervalSeconds = 20,
     this.databasePath = 'data/canxe.db',
     this.webRoot = 'web',
@@ -151,6 +153,8 @@ class ServerConfig {
       address: asStringOrNull(station['address']),
       publicBaseUrl: asStringOrNull(station['public_base_url']),
       centralUrl: asStringOrNull(central['url']),
+      centralUsername: asStringOrNull(central['username']),
+      centralPassword: asStringOrNull(central['password']),
       syncIntervalSeconds: asInt(central['sync_interval_seconds'], fallback: 20),
       databasePath: asString(db['path'], fallback: 'data/canxe.db'),
       webRoot: asString(json['web_root'], fallback: 'web'),
@@ -189,8 +193,16 @@ class ServerConfig {
   /// ví dụ `http://100.101.102.103:8080`. Trạm khai báo lên trung tâm khi đăng ký.
   final String? publicBaseUrl;
 
-  /// URL máy chủ trung tâm, ví dụ `http://100.76.81.118:8080`.
+  /// URL máy chủ trung tâm, ví dụ `http://100.76.81.118:9080`.
   final String? centralUrl;
+
+  /// Tài khoản máy trạm dùng để đăng nhập lên trung tâm.
+  ///
+  /// Máy trạm cũng phải qua cửa đăng nhập như người dùng, không có cửa sau
+  /// riêng. Nhờ vậy phạm vi kho của trạm do chính tài khoản này quyết định, và
+  /// tra được trạm nào đồng bộ lúc nào.
+  final String? centralUsername;
+  final String? centralPassword;
   final int syncIntervalSeconds;
   final String databasePath;
 
@@ -239,11 +251,22 @@ class ServerConfig {
         address: address,
         publicBaseUrl: publicBaseUrl,
         centralUrl: centralUrl ?? this.centralUrl,
+        centralUsername: centralUsername,
+        centralPassword: centralPassword,
         syncIntervalSeconds: syncIntervalSeconds,
         databasePath: databasePath ?? this.databasePath,
         webRoot: webRoot ?? this.webRoot,
         scale: scale ?? this.scale,
       );
+
+  /// Thiếu tài khoản đăng nhập lên trung tâm.
+  ///
+  /// Cố tình KHÔNG coi đây là lỗi cấu hình: bàn cân phải cân được ngay cả khi
+  /// chưa khai tài khoản đồng bộ. Chặn máy trạm khởi động vì lý do này là làm
+  /// cả kho đứng bánh chỉ vì một dòng cấu hình chưa điền.
+  bool get missingCentralAccount =>
+      isStation &&
+      ((centralUsername ?? '').isEmpty || (centralPassword ?? '').isEmpty);
 
   /// Kiểm tra cấu hình trước khi khởi động để báo lỗi rõ ràng ngay từ đầu thay
   /// vì để server chạy nửa vời rồi hỏng lúc đang cân xe.
@@ -259,6 +282,7 @@ class ServerConfig {
       if (centralUri == null) {
         errors.add('Vai trò "station" bắt buộc phải khai báo central.url để đồng bộ.');
       }
+
     }
     if (scale.simulate && scale.port.isNotEmpty) {
       errors.add('Không thể vừa bật scale.simulate vừa khai báo scale.port.');

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'core/app_settings.dart';
 import 'core/theme.dart';
+import 'screens/auth_screen.dart';
 import 'screens/home_shell.dart';
 import 'state/server_connection.dart';
 import 'state/live_weight_controller.dart';
@@ -49,7 +50,13 @@ class _Gate extends StatelessWidget {
   Widget build(BuildContext context) {
     final conn = context.watch<ServerConnection>();
 
-    if (conn.isConnected) return const HomeShell();
+    if (conn.isConnected) {
+      // Ba cửa nối tiếp nhau: chưa có tài khoản nào thì lập tài khoản chủ, có
+      // rồi mà chưa đăng nhập thì vào màn hình đăng nhập, xong mới tới app.
+      if (conn.needsSetup) return const AuthScreen(setupMode: true);
+      if (!conn.isSignedIn) return const AuthScreen(setupMode: false);
+      return const HomeShell();
+    }
 
     return Scaffold(
       body: Center(

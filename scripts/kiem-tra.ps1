@@ -24,6 +24,7 @@ function Invoke-Step {
 Invoke-Step 'Phân tích canxe_shared' (Join-Path $root 'packages\shared') $dart @('analyze')
 Invoke-Step 'Kiểm thử canxe_shared'  (Join-Path $root 'packages\shared') $dart @('test')
 Invoke-Step 'Phân tích canxe_server' (Join-Path $root 'packages\server') $dart @('analyze')
+Invoke-Step 'Kiểm thử canxe_server'  (Join-Path $root 'packages\server') $dart @('test')
 Invoke-Step 'Phân tích canxe_app'    (Join-Path $root 'packages\app')    $flutter @('analyze')
 Invoke-Step 'Kiểm thử canxe_app'     (Join-Path $root 'packages\app')    $flutter @('test')
 

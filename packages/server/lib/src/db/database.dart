@@ -71,6 +71,41 @@ class AppDatabase {
       _createV1();
       db.execute('PRAGMA user_version = 1;');
     }
+    if (version < 2) {
+      _createV2();
+      db.execute('PRAGMA user_version = 2;');
+    }
+  }
+
+  /// Phiên bản 2: thêm tài khoản đăng nhập.
+  ///
+  /// Chạy được trên cơ sở dữ liệu đã có sẵn dữ liệu thật, chỉ thêm bảng mới nên
+  /// phiếu cân và danh mục hiện có không bị đụng tới.
+  void _createV2() {
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS nguoi_dung (
+        id              TEXT PRIMARY KEY,
+        username        TEXT NOT NULL,
+        full_name       TEXT NOT NULL DEFAULT '',
+        role            TEXT NOT NULL DEFAULT 'tram',
+        station_scope   TEXT NOT NULL DEFAULT '',
+        active          INTEGER NOT NULL DEFAULT 1,
+        machine_account INTEGER NOT NULL DEFAULT 0,
+        password_hash   TEXT NOT NULL DEFAULT '',
+        salt            TEXT NOT NULL DEFAULT '',
+        iterations      INTEGER NOT NULL DEFAULT 0,
+        updated_at      INTEGER NOT NULL,
+        deleted         INTEGER NOT NULL DEFAULT 0,
+        dirty           INTEGER NOT NULL DEFAULT 1
+      );
+    ''');
+    // Tên đăng nhập phải là duy nhất trong số tài khoản còn hiệu lực. Không đặt
+    // UNIQUE thẳng trên cột vì tài khoản đã xoá vẫn nằm lại để đồng bộ.
+    db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_nguoi_dung_username '
+      'ON nguoi_dung(username) WHERE deleted = 0;',
+    );
+    db.execute('CREATE INDEX IF NOT EXISTS idx_nguoi_dung_updated ON nguoi_dung(updated_at);');
   }
 
   void _createV1() {

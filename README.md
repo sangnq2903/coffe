@@ -36,6 +36,65 @@ khối lượng thành phẩm quy đổi theo tỷ lệ.
 | **Phần 3** — app điện thoại nối tới server có gắn trạm cân để cân và lưu | Cùng một mã nguồn Flutter, mở bằng trình duyệt điện thoại hoặc build APK |
 | **Màn hình số cân nhảy liên tục** | Server trạm đọc COM → WebSocket `/ws/scale?station=` → app vẽ lại mỗi khung |
 | **In phiếu cân** | Xuất PDF khổ A5 ngang (có dấu tiếng Việt), in thẳng từ web/Windows/điện thoại hoặc tải file gửi khách |
+| **Đăng nhập & phân quyền** | Tài khoản quản lý tổng thấy mọi kho; tài khoản trạm chỉ thấy kho được gán |
+
+---
+
+## 1b. Đăng nhập và phân quyền
+
+Mọi lời gọi API và WebSocket đều bắt đăng nhập. Chỉ file giao diện web là để mở —
+chặn cả chúng thì trình duyệt không tải nổi chính màn hình đăng nhập.
+
+### Hai loại tài khoản
+
+| Vai trò | Phạm vi |
+|---|---|
+| **Quản lý tổng** | Toàn bộ kho, mọi chức năng, tạo và xoá được tài khoản khác |
+| **Nhân viên trạm cân** | Chỉ những kho được gán: phiếu cân, số cân realtime, đồng bộ |
+
+Giới hạn được **chặn ở máy chủ**, không phải giấu trên giao diện. Tài khoản kho 1
+có gõ thẳng địa chỉ phiếu cân của kho 2 cũng nhận về lỗi 403.
+
+Quan trọng hơn: **luồng đồng bộ cũng bị giới hạn theo phạm vi**, nên ổ cứng máy ở
+kho 1 không còn chứa dữ liệu của kho 2 nữa. Nếu chỉ giấu trên màn hình thì ai mở
+được file cơ sở dữ liệu vẫn đọc hết.
+
+### Lần chạy đầu tiên
+
+Chưa có tài khoản nào thì mở web ra sẽ thấy màn hình **Tạo tài khoản quản lý
+tổng**. Đường dẫn tạo tài khoản đầu tiên tự khoá lại ngay khi đã có người dùng.
+
+### Máy trạm cân đăng nhập thế nào
+
+Máy trạm cũng qua cửa đăng nhập như người, không có cửa sau riêng. Sau khi có tài
+khoản tổng:
+
+1. Vào **Cá nhân → Quản lý tài khoản → Thêm**
+2. Chọn quyền **Nhân viên trạm cân**, tích đúng kho của máy đó
+3. Điền tên đăng nhập và mật khẩu vừa tạo vào `config.json` của máy trạm:
+
+```jsonc
+"central": {
+  "url": "http://100.76.81.118:9080",
+  "username": "tram01",
+  "password": "..."
+}
+```
+
+Chưa khai thì **trạm vẫn cân và lưu bình thường**, chỉ là chưa đẩy dữ liệu lên
+trung tâm — bàn cân không được phép đứng bánh vì một dòng cấu hình chưa điền.
+
+### Bảo mật
+
+- Mật khẩu băm bằng **PBKDF2-HMAC-SHA256**, 120.000 vòng, muối riêng từng người
+- Phiên đăng nhập ký bằng HMAC, **giữ 30 ngày** để máy ở bàn cân không phải đăng
+  nhập lại mỗi ca
+- **Khoá ký sinh ngẫu nhiên lần chạy đầu**, cất trong cơ sở dữ liệu, không nằm
+  trong mã nguồn — repo này công khai, khoá mà lọt vào là ai cũng ký được phiên giả
+- Mỗi máy chủ một khoá riêng: phiếu phiên cấp ở máy nào chỉ dùng được ở máy đó
+- Phiếu phiên đi qua địa chỉ với WebSocket (trình duyệt không cho gắn tiêu đề),
+  nên phần ghi nhật ký đã che chuỗi này lại
+- Người lập phiếu lấy từ tài khoản đang đăng nhập, client không gửi lên được nữa
 
 ---
 

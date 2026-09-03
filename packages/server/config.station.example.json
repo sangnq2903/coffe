@@ -18,6 +18,9 @@
 
   "central": {
     "url": "http://100.76.81.118:9080",
+    "_tai_khoan": "Tài khoản trạm cân để đăng nhập lên trung tâm. Tạo trong app: Cá nhân > Quản lý tài khoản > Thêm, chọn quyền 'Nhân viên trạm cân' và tích đúng kho của máy này.",
+    "username": "",
+    "password": "",
     "sync_interval_seconds": 20
   },
 

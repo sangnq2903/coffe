@@ -1,4 +1,5 @@
 import '../json_utils.dart';
+import 'app_user.dart';
 import 'customer.dart';
 import 'goods_type.dart';
 import 'vehicle.dart';
@@ -10,6 +11,7 @@ import 'weigh_ticket.dart';
 /// mốc lần đồng bộ trước, bên nhận ghi đè theo nguyên tắc bản mới nhất thắng.
 class SyncPayload {
   const SyncPayload({
+    this.users = const [],
     this.customers = const [],
     this.vehicles = const [],
     this.goodsTypes = const [],
@@ -18,6 +20,7 @@ class SyncPayload {
   });
 
   factory SyncPayload.fromJson(Map<String, Object?> json) => SyncPayload(
+        users: asMapList(json['users']).map(AppUser.fromJson).toList(),
         customers:
             asMapList(json['customers']).map(Customer.fromJson).toList(),
         vehicles: asMapList(json['vehicles']).map(Vehicle.fromJson).toList(),
@@ -27,6 +30,12 @@ class SyncPayload {
         serverTime: asTimeOrNull(json['server_time']),
       );
 
+  /// Tài khoản đăng nhập, kèm chuỗi băm mật khẩu.
+  ///
+  /// Máy trạm phải giữ được bản sao để nhân viên đăng nhập khi đứt mạng — nếu
+  /// mỗi lần đăng nhập đều phải hỏi máy chủ trung tâm thì mất mạng là cả kho
+  /// đứng bánh.
+  final List<AppUser> users;
   final List<Customer> customers;
   final List<Vehicle> vehicles;
   final List<GoodsType> goodsTypes;
@@ -37,15 +46,21 @@ class SyncPayload {
   final DateTime? serverTime;
 
   bool get isEmpty =>
+      users.isEmpty &&
       customers.isEmpty &&
       vehicles.isEmpty &&
       goodsTypes.isEmpty &&
       tickets.isEmpty;
 
   int get totalRecords =>
-      customers.length + vehicles.length + goodsTypes.length + tickets.length;
+      users.length +
+      customers.length +
+      vehicles.length +
+      goodsTypes.length +
+      tickets.length;
 
   Map<String, Object?> toJson() => {
+        'users': users.map((e) => e.toJson(includeSecret: true)).toList(),
         'customers': customers.map((e) => e.toJson()).toList(),
         'vehicles': vehicles.map((e) => e.toJson()).toList(),
         'goods_types': goodsTypes.map((e) => e.toJson()).toList(),

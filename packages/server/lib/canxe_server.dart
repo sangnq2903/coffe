@@ -1,8 +1,9 @@
 /// Máy chủ cân xe — chạy được hai vai trò: trung tâm và trạm cân.
 library canxe_server;
 
-export 'src/api/api_router.dart' show ApiRouter, appVersion, corsMiddleware;
+export 'src/api/api_router.dart' show ApiRouter, appVersion, authMiddleware, corsMiddleware;
 export 'src/api/reading_broker.dart';
+export 'src/auth/auth_service.dart';
 export 'src/config.dart';
 export 'src/console.dart';
 export 'src/db/database.dart';

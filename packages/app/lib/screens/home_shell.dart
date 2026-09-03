@@ -5,6 +5,7 @@ import '../core/theme.dart';
 import '../state/server_connection.dart';
 import '../state/live_weight_controller.dart';
 import '../widgets/station_picker.dart';
+import 'account_screen.dart';
 import 'catalog_screen.dart';
 import 'settings_screen.dart';
 import 'tickets_screen.dart';
@@ -27,6 +28,7 @@ class _HomeShellState extends State<HomeShell> {
     (icon: Icons.receipt_long, label: 'Phiếu cân'),
     (icon: Icons.folder_shared, label: 'Danh mục'),
     (icon: Icons.settings, label: 'Cài đặt'),
+    (icon: Icons.account_circle, label: 'Cá nhân'),
   ];
 
   /// Mở lại luồng số cân mỗi khi người dùng đổi server hoặc đổi trạm.
@@ -45,7 +47,13 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final conn = context.watch<ServerConnection>();
     _syncLiveWeight(conn);
-    const pages = [WeighScreen(), TicketsScreen(), CatalogScreen(), SettingsScreen()];
+    const pages = [
+      WeighScreen(),
+      TicketsScreen(),
+      CatalogScreen(),
+      SettingsScreen(),
+      AccountScreen(),
+    ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -64,7 +72,14 @@ class _HomeShellState extends State<HomeShell> {
                 ],
               ],
             ),
-            actions: const [_ConnectionIndicator(), SizedBox(width: 16)],
+            actions: [
+              if (conn.currentUser != null && wide) ...[
+                _UserChip(name: conn.currentUser!.displayName),
+                const SizedBox(width: 12),
+              ],
+              const _ConnectionIndicator(),
+              const SizedBox(width: 16),
+            ],
           ),
           body: wide
               ? Row(
@@ -149,6 +164,26 @@ class _StationButton extends StatelessWidget {
             ],
           ),
         ),
+      );
+}
+
+/// Tên người đang đăng nhập trên thanh tiêu đề.
+class _UserChip extends StatelessWidget {
+  const _UserChip({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.person, size: 15, color: Colors.white54),
+          const SizedBox(width: 6),
+          Text(
+            name,
+            style: const TextStyle(fontSize: 13, color: Colors.white70),
+          ),
+        ],
       );
 }
 

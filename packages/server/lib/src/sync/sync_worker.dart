@@ -4,6 +4,7 @@ import 'package:canxe_shared/canxe_shared.dart';
 
 import '../config.dart';
 import '../db/repository.dart';
+import 'central_session.dart';
 
 /// Đồng bộ dữ liệu hai chiều giữa trạm cân và máy chủ trung tâm.
 ///
@@ -14,15 +15,16 @@ class SyncWorker {
   SyncWorker({
     required this.config,
     required this.repo,
-    ApiClient? client,
-  }) : _client = client ??
-            ApiClient(baseUrl: config.centralUri ?? Uri.parse('http://127.0.0.1'));
+    CentralSession? session,
+  }) : session = session ?? CentralSession(config: config);
 
   static const _pullMarkKey = 'central_pull_mark';
 
   final ServerConfig config;
   final Repository repo;
-  final ApiClient _client;
+  final CentralSession session;
+
+  ApiClient get _client => session.client;
 
   Timer? _timer;
   bool _busy = false;
@@ -52,8 +54,27 @@ class SyncWorker {
     if (_busy || config.centralUri == null) return;
     _busy = true;
     try {
-      await _push();
-      await _pull();
+      if (!await session.ensureLoggedIn()) {
+        _online = false;
+        _lastError = session.lastError;
+        return;
+      }
+      try {
+        await _push();
+        await _pull();
+      } on ApiException catch (e) {
+        // Phiếu phiên hết hạn hoặc trung tâm vừa cài lại: đăng nhập lại rồi thử
+        // đúng một lần nữa, tránh vòng lặp gọi mạng vô tận khi sai mật khẩu.
+        if (e.statusCode != 401) rethrow;
+        session.invalidate();
+        if (!await session.ensureLoggedIn()) {
+          _online = false;
+          _lastError = session.lastError;
+          return;
+        }
+        await _push();
+        await _pull();
+      }
       _online = true;
       _lastError = null;
       _lastSyncAt = DateTime.now();
@@ -94,6 +115,6 @@ class SyncWorker {
 
   Future<void> dispose() async {
     _timer?.cancel();
-    _client.close();
+    session.close();
   }
 }

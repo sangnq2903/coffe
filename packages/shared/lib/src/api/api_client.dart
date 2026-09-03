@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../json_utils.dart';
+import '../models/app_user.dart';
 import '../models/customer.dart';
 import '../models/goods_type.dart';
 import '../models/scale_reading.dart';
@@ -45,6 +46,21 @@ class ServerInfo {
   bool get isCentral => role == 'central';
 }
 
+/// Kết quả một lần đăng nhập.
+class AuthResult {
+  const AuthResult({required this.token, required this.user});
+
+  factory AuthResult.fromJson(Map<String, Object?> json) => AuthResult(
+        token: asString(json['token']),
+        user: AppUser.fromJson(
+          (json['user'] as Map?)?.cast<String, Object?>() ?? const {'updated_at': 0},
+        ),
+      );
+
+  final String token;
+  final AppUser user;
+}
+
 /// Client HTTP dùng chung cho app Flutter (web/Windows/Android) và cho tiến
 /// trình đồng bộ của trạm cân.
 class ApiClient {
@@ -84,11 +100,22 @@ class ApiClient {
   final http.Client _http;
   final Duration timeout;
 
+  /// Phiếu phiên đăng nhập, gắn vào mọi lời gọi sau khi đăng nhập.
+  String? authToken;
+
+  bool get hasToken => (authToken ?? '').isNotEmpty;
+
   Uri get baseUrl => _baseUrl;
 
   /// Địa chỉ WebSocket suy ra từ baseUrl (http → ws, https → wss).
-  Uri wsUri(String path, [Map<String, String>? query]) =>
-      _build(path, query, scheme: _baseUrl.scheme == 'https' ? 'wss' : 'ws');
+  ///
+  /// Phiếu phiên phải đi kèm trong địa chỉ: trình duyệt không cho gắn tiêu đề
+  /// vào kết nối WebSocket.
+  Uri wsUri(String path, [Map<String, String>? query]) => _build(
+        path,
+        {...?query, if (hasToken) 'token': authToken!},
+        scheme: _baseUrl.scheme == 'https' ? 'wss' : 'ws',
+      );
 
   void close() => _http.close();
 
@@ -218,13 +245,74 @@ class ApiClient {
 
   Uri _uri(String path, [Map<String, String>? query]) => _build(path, query);
 
+  Map<String, String> get _headers => {
+        'content-type': 'application/json; charset=utf-8',
+        if (hasToken) 'authorization': 'Bearer $authToken',
+      };
+
+  // -------------------------------------------------------------- đăng nhập
+
+  /// Hệ thống đã có tài khoản chưa, và máy chủ này là vai trò gì.
+  Future<Map<String, Object?>> authStatus() => _getMap('/api/auth/status');
+
+  /// Tạo tài khoản quản lý tổng đầu tiên. Trả về phiếu phiên luôn.
+  Future<AuthResult> setupFirstAdmin({
+    required String username,
+    required String fullName,
+    required String password,
+  }) async =>
+      AuthResult.fromJson(await _postMap('/api/auth/setup', {
+        'username': username,
+        'full_name': fullName,
+        'password': password,
+      }));
+
+  Future<AuthResult> login(String username, String password) async =>
+      AuthResult.fromJson(await _postMap('/api/auth/login', {
+        'username': username,
+        'password': password,
+      }));
+
+  Future<AppUser> me() async => AppUser.fromJson(await _getMap('/api/auth/me'));
+
+  Future<void> changePassword(String oldPassword, String newPassword) =>
+      _postMap('/api/auth/doi-mat-khau', {
+        'mat_khau_cu': oldPassword,
+        'mat_khau_moi': newPassword,
+      });
+
+  Future<List<AppUser>> users() async =>
+      (await _getList('/api/users')).map(AppUser.fromJson).toList();
+
+  Future<AppUser> createUser({
+    required String username,
+    required String fullName,
+    required String password,
+    required UserRole role,
+    List<String> stationScope = const [],
+  }) async =>
+      AppUser.fromJson(await _postMap('/api/users', {
+        'username': username,
+        'full_name': fullName,
+        'password': password,
+        'role': role.value,
+        'station_scope': stationScope.join(','),
+      }));
+
+  Future<void> resetPassword(String userId, String newPassword) =>
+      _postMap('/api/users/$userId/mat-khau', {'mat_khau_moi': newPassword});
+
+  Future<void> deleteUser(String userId) => _delete('/api/users/$userId');
+
   Future<Map<String, Object?>> _getMap(String path, [Map<String, String>? query]) async {
-    final body = await _send(() => _http.get(_uri(path, query)), _uri(path, query));
+    final body =
+        await _send(() => _http.get(_uri(path, query), headers: _headers), _uri(path, query));
     return body is Map<String, Object?> ? body : <String, Object?>{};
   }
 
   Future<List<Map<String, Object?>>> _getList(String path, [Map<String, String>? query]) async {
-    final body = await _send(() => _http.get(_uri(path, query)), _uri(path, query));
+    final body =
+        await _send(() => _http.get(_uri(path, query), headers: _headers), _uri(path, query));
     if (body is List) {
       return body.whereType<Map>().map((e) => e.cast<String, Object?>()).toList();
     }
@@ -237,11 +325,7 @@ class ApiClient {
   Future<Map<String, Object?>> _postMap(String path, Map<String, Object?> payload) async {
     final uri = _uri(path);
     final body = await _send(
-      () => _http.post(
-        uri,
-        headers: const {'content-type': 'application/json; charset=utf-8'},
-        body: jsonEncode(payload),
-      ),
+      () => _http.post(uri, headers: _headers, body: jsonEncode(payload)),
       uri,
     );
     return body is Map<String, Object?> ? body : <String, Object?>{};
@@ -249,7 +333,7 @@ class ApiClient {
 
   Future<void> _delete(String path) async {
     final uri = _uri(path);
-    await _send(() => _http.delete(uri), uri);
+    await _send(() => _http.delete(uri, headers: _headers), uri);
   }
 
   Future<Object?> _send(Future<http.Response> Function() request, Uri uri) async {

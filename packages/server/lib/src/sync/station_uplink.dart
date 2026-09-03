@@ -5,6 +5,7 @@ import 'package:canxe_shared/canxe_shared.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config.dart';
+import 'central_session.dart';
 
 /// Kênh thường trực từ trạm cân lên máy chủ trung tâm.
 ///
@@ -15,12 +16,16 @@ class StationUplink {
   StationUplink({
     required this.config,
     required this.readings,
+    required this.session,
     this.throttle = const Duration(milliseconds: 400),
     WebSocketChannel Function(Uri)? connector,
   }) : _connect = connector ?? WebSocketChannel.connect;
 
   final ServerConfig config;
   final Stream<ScaleReading> readings;
+
+  /// Dùng chung phiên đăng nhập với luồng đồng bộ dữ liệu.
+  final CentralSession session;
 
   /// Đẩy thưa hơn nhịp nội bộ: đường Tailscale giữa các kho có thể là 4G, không
   /// cần bắn 5 gói mỗi giây cho một con số mà mắt người chỉ đọc được vài lần.
@@ -43,14 +48,28 @@ class StationUplink {
   void start() {
     final central = config.centralUri;
     if (central == null) return;
+    unawaited(_openWhenLoggedIn(central));
+  }
+
+  /// Trung tâm bắt đăng nhập cho cả WebSocket, nên phải có phiếu phiên trước
+  /// khi mở kênh.
+  Future<void> _openWhenLoggedIn(Uri central) async {
+    if (_closed) return;
+    if (!await session.ensureLoggedIn()) {
+      _onDisconnected(central);
+      return;
+    }
     _open(central);
   }
 
   void _open(Uri central) {
     if (_closed) return;
-    final wsUri = central.replace(
+    final wsUri = Uri(
       scheme: central.scheme == 'https' ? 'wss' : 'ws',
+      host: central.host,
+      port: central.hasPort ? central.port : null,
       path: '${central.path.replaceAll(RegExp(r'/$'), '')}/ws/station',
+      queryParameters: {'token': session.token ?? ''},
     );
     try {
       final channel = _connect(wsUri);
@@ -114,7 +133,9 @@ class StationUplink {
     final seconds = (_attempt * 2).clamp(2, 30);
     _reconnectTimer = Timer(Duration(seconds: seconds), () {
       _reconnectTimer = null;
-      _open(central);
+      // Phiếu phiên có thể là nguyên nhân bị ngắt, nên bỏ đi để đăng nhập lại.
+      session.invalidate();
+      unawaited(_openWhenLoggedIn(central));
     });
   }
 

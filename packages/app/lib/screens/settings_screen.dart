@@ -17,7 +17,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _serverController;
-  late final TextEditingController _operatorController;
   SyncStatus? _syncStatus;
   bool _busy = false;
 
@@ -26,14 +25,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     final settings = context.read<AppSettings>();
     _serverController = TextEditingController(text: settings.serverUrl);
-    _operatorController = TextEditingController(text: settings.operatorName);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadSyncStatus());
   }
 
   @override
   void dispose() {
     _serverController.dispose();
-    _operatorController.dispose();
     super.dispose();
   }
 
@@ -53,7 +50,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final settings = context.read<AppSettings>();
     final conn = context.read<ServerConnection>();
     await settings.setServerUrl(_serverController.text);
-    await settings.setOperatorName(_operatorController.text);
     await conn.connect();
     await _loadSyncStatus();
     if (mounted) setState(() => _busy = false);
@@ -95,15 +91,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 hintText: 'http://100.76.81.118:9080',
                 helperText: 'Để trống khi mở app từ chính máy chủ (bản web).',
                 prefixIcon: Icon(Icons.dns),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _operatorController,
-              decoration: const InputDecoration(
-                labelText: 'Tên người cân',
-                helperText: 'Ghi vào phiếu để biết ai lập',
-                prefixIcon: Icon(Icons.badge),
               ),
             ),
             const SizedBox(height: 12),

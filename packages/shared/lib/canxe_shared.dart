@@ -3,6 +3,9 @@ library canxe_shared;
 
 export 'src/json_utils.dart';
 export 'src/ids.dart';
+export 'src/auth/password.dart';
+export 'src/auth/session_token.dart';
+export 'src/models/app_user.dart';
 export 'src/models/customer.dart';
 export 'src/models/vehicle.dart';
 export 'src/models/goods_type.dart';
