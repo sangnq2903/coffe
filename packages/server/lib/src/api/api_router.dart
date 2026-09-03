@@ -447,9 +447,6 @@ class ApiRouter {
       error: _error,
       guard: _guard,
       body: _body,
-      user: _user,
-      scope: _scope,
-      requireStation: _requireStation,
     ).attach(router);
 
     router.get('/ws/scale', _scaleSocketHandler());

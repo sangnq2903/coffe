@@ -79,6 +79,30 @@ class AppDatabase {
       _createV3();
       db.execute('PRAGMA user_version = 3;');
     }
+    if (version < 4) {
+      _createV4();
+      db.execute('PRAGMA user_version = 4;');
+    }
+  }
+
+  /// Phiên bản 4: người trong đoàn chuyển kho được tuỳ thời điểm.
+  ///
+  /// Đoàn không còn thuộc về một kho — cột `doan.station_code` giữ lại cho dữ
+  /// liệu cũ đọc được nhưng không dùng nữa. Kho giờ là thuộc tính của từng
+  /// người, và mỗi ngày chấm công chép lại kho tại thời điểm đó để chuyển kho
+  /// hôm nay không làm đổi số liệu tháng trước.
+  void _createV4() {
+    for (final sql in [
+      'ALTER TABLE nhan_vien ADD COLUMN station_code TEXT',
+      'ALTER TABLE cham_cong ADD COLUMN station_code TEXT',
+    ]) {
+      try {
+        db.execute(sql);
+      } on SqliteException {
+        // Cột đã có sẵn (cơ sở dữ liệu dựng mới bằng lược đồ mới nhất).
+      }
+    }
+    db.execute('CREATE INDEX IF NOT EXISTS idx_cham_cong_kho ON cham_cong(station_code, date);');
   }
 
   /// Phiên bản 3: module chấm công và tính lương mùa vụ.
@@ -159,10 +183,11 @@ class AppDatabase {
 
     db.execute('''
       CREATE TABLE IF NOT EXISTS nhan_vien (
-        id         TEXT PRIMARY KEY,
-        crew_id    TEXT NOT NULL,
-        name       TEXT NOT NULL,
-        phone      TEXT,
+        id           TEXT PRIMARY KEY,
+        crew_id      TEXT NOT NULL,
+        name         TEXT NOT NULL,
+        phone        TEXT,
+        station_code TEXT,
         band_id    TEXT,
         join_date  INTEGER,
         leave_date INTEGER,
@@ -186,6 +211,7 @@ class AppDatabase {
         date           INTEGER NOT NULL,
         present        INTEGER NOT NULL DEFAULT 1,
         phase_id       TEXT,
+        station_code   TEXT,
         monthly_amount REAL NOT NULL DEFAULT 0,
         days_in_month  INTEGER NOT NULL DEFAULT 30,
         note           TEXT,

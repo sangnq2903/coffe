@@ -19,6 +19,7 @@ class Attendance {
     required this.date,
     this.present = true,
     this.phaseId,
+    this.stationCode,
     required this.monthlyAmount,
     required this.daysInMonth,
     this.note,
@@ -33,6 +34,7 @@ class Attendance {
     required DateTime date,
     required double monthlyAmount,
     String? phaseId,
+    String? stationCode,
     bool present = true,
     String? note,
     String? createdBy,
@@ -45,6 +47,7 @@ class Attendance {
       date: day,
       present: present,
       phaseId: phaseId,
+      stationCode: stationCode?.toUpperCase(),
       monthlyAmount: monthlyAmount,
       daysInMonth: daysInMonthOf(day),
       note: note,
@@ -60,6 +63,7 @@ class Attendance {
         date: asTime(json['date']),
         present: asBool(json['present'], fallback: true),
         phaseId: asStringOrNull(json['phase_id']),
+        stationCode: asStringOrNull(json['station_code']),
         monthlyAmount: asDouble(json['monthly_amount']),
         daysInMonth: asInt(json['days_in_month'], fallback: 30),
         note: asStringOrNull(json['note']),
@@ -86,6 +90,13 @@ class Attendance {
   /// Giai đoạn lương của ngày đó, giữ lại để tra cứu và đối chiếu.
   final String? phaseId;
 
+  /// Kho người đó làm việc **trong ngày này**.
+  ///
+  /// Chép lại từ kho hiện tại của người đó lúc chấm công. Nhờ vậy chuyển kho
+  /// hôm nay không làm đổi số liệu tháng trước, và sau này cộng ra được tiền
+  /// công mà từng kho phải gánh.
+  final String? stationCode;
+
   /// Lương tháng áp dụng tại thời điểm chấm (đồng).
   final double monthlyAmount;
 
@@ -108,6 +119,7 @@ class Attendance {
         'date': timeToMillis(date),
         'present': present ? 1 : 0,
         'phase_id': phaseId,
+        'station_code': stationCode,
         'monthly_amount': monthlyAmount,
         'days_in_month': daysInMonth,
         'note': note,
@@ -119,6 +131,7 @@ class Attendance {
   Attendance copyWith({
     bool? present,
     String? phaseId,
+    String? stationCode,
     double? monthlyAmount,
     String? note,
     bool? deleted,
@@ -130,6 +143,7 @@ class Attendance {
         date: date,
         present: present ?? this.present,
         phaseId: phaseId ?? this.phaseId,
+        stationCode: stationCode?.toUpperCase() ?? this.stationCode,
         monthlyAmount: monthlyAmount ?? this.monthlyAmount,
         daysInMonth: daysInMonth,
         note: note ?? this.note,

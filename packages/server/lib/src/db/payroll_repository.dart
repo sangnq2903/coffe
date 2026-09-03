@@ -27,17 +27,14 @@ class PayrollRepository {
 
   // ==================================================================== đoàn
 
-  List<Crew> crews({List<String>? allowedStations, bool includeClosed = true}) {
-    final where = <String>['deleted = 0'];
-    final args = <Object?>[];
-    if (!includeClosed) where.add("status = 'dang_dien_ra'");
-    if (allowedStations != null) {
-      if (allowedStations.isEmpty) return const [];
-      where.add('station_code IN (${_marks(allowedStations.length)})');
-      args.addAll(allowedStations);
-    }
+  /// Danh sách đoàn.
+  ///
+  /// Không giới hạn theo kho: đoàn thuộc về công ty, người trong đoàn chuyển
+  /// qua lại giữa các kho nên không có chuyện "đoàn của kho nào".
+  List<Crew> crews({bool includeClosed = true}) {
+    final where = includeClosed ? 'deleted = 0' : "deleted = 0 AND status = 'dang_dien_ra'";
     return _db
-        .select('SELECT * FROM doan WHERE ${where.join(" AND ")} ORDER BY season DESC, name', args)
+        .select('SELECT * FROM doan WHERE $where ORDER BY season DESC, name')
         .map((r) => Crew.fromJson(r))
         .toList();
   }
@@ -48,9 +45,11 @@ class PayrollRepository {
     _db.execute('''
       INSERT INTO doan (id, name, station_code, season, start_date, end_date, status, note,
         updated_at, deleted, dirty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      -- Cột station_code giữ lại cho dữ liệu cũ đọc được (nó NOT NULL) nhưng
+      -- không còn ý nghĩa: kho giờ là thuộc tính của từng người trong đoàn.
+      VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name, station_code = excluded.station_code,
+        name = excluded.name,
         season = excluded.season, start_date = excluded.start_date,
         end_date = excluded.end_date, status = excluded.status, note = excluded.note,
         updated_at = excluded.updated_at, deleted = excluded.deleted, dirty = excluded.dirty
@@ -58,7 +57,6 @@ class PayrollRepository {
     ''', [
       crew.id,
       crew.name,
-      crew.stationCode,
       crew.season,
       timeToMillisOrNull(crew.startDate),
       timeToMillisOrNull(crew.endDate),
@@ -209,12 +207,21 @@ class PayrollRepository {
 
   // ============================================================== nhân viên
 
-  List<Worker> workers(String crewId, {WorkerStatus? status, String? query}) {
+  List<Worker> workers(
+    String crewId, {
+    WorkerStatus? status,
+    String? query,
+    String? stationCode,
+  }) {
     final where = <String>['crew_id = ?', 'deleted = 0'];
     final args = <Object?>[crewId];
     if (status != null) {
       where.add('status = ?');
       args.add(status.value);
+    }
+    if (stationCode != null && stationCode.isNotEmpty) {
+      where.add('station_code = ?');
+      args.add(stationCode.toUpperCase());
     }
     if (query != null && query.trim().isNotEmpty) {
       where.add('(lower(name) LIKE ?1 OR lower(ifnull(phone, "")) LIKE ?1)');
@@ -233,11 +240,12 @@ class PayrollRepository {
 
   Worker upsertWorker(Worker worker, {bool dirty = true}) {
     _db.execute('''
-      INSERT INTO nhan_vien (id, crew_id, name, phone, band_id, join_date, leave_date,
-        status, note, updated_at, deleted, dirty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO nhan_vien (id, crew_id, name, phone, station_code, band_id, join_date,
+        leave_date, status, note, updated_at, deleted, dirty)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name, phone = excluded.phone, band_id = excluded.band_id,
+        name = excluded.name, phone = excluded.phone,
+        station_code = excluded.station_code, band_id = excluded.band_id,
         join_date = excluded.join_date, leave_date = excluded.leave_date,
         status = excluded.status, note = excluded.note, updated_at = excluded.updated_at,
         deleted = excluded.deleted, dirty = excluded.dirty
@@ -247,6 +255,7 @@ class PayrollRepository {
       worker.crewId,
       worker.name,
       worker.phone,
+      worker.stationCode,
       worker.bandId,
       timeToMillisOrNull(worker.joinDate),
       timeToMillisOrNull(worker.leaveDate),
@@ -304,11 +313,12 @@ class PayrollRepository {
 
   Attendance upsertAttendance(Attendance record, {bool dirty = true}) {
     _db.execute('''
-      INSERT INTO cham_cong (id, crew_id, worker_id, date, present, phase_id,
+      INSERT INTO cham_cong (id, crew_id, worker_id, date, present, phase_id, station_code,
         monthly_amount, days_in_month, note, created_by, updated_at, deleted, dirty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         present = excluded.present, phase_id = excluded.phase_id,
+        station_code = excluded.station_code,
         monthly_amount = excluded.monthly_amount, days_in_month = excluded.days_in_month,
         note = excluded.note, updated_at = excluded.updated_at,
         deleted = excluded.deleted, dirty = excluded.dirty
@@ -320,6 +330,7 @@ class PayrollRepository {
       timeToMillis(record.date),
       record.present ? 1 : 0,
       record.phaseId,
+      record.stationCode,
       record.monthlyAmount,
       record.daysInMonth,
       record.note,
@@ -399,55 +410,31 @@ class PayrollRepository {
 
   // ================================================================ đồng bộ
 
-  /// Lấy thay đổi sau mốc [since], giới hạn theo phạm vi kho của tài khoản.
+  /// Lấy thay đổi sau mốc [since].
   ///
-  /// Các bảng con lọc gián tiếp qua đoàn: `crew_id` nằm trong những đoàn thuộc
-  /// kho được phép. Nhờ vậy máy trạm kho 1 không tải về dữ liệu chấm công của
-  /// kho 2 — giấu trên màn hình là chưa đủ, dữ liệu không được nằm trên ổ cứng
-  /// máy đó ngay từ đầu.
-  PayrollSyncData changesSince(
-    DateTime? since, {
-    List<String>? allowedStations,
-    int limit = 500,
-  }) {
+  /// Không giới hạn theo kho. Đoàn thuộc về công ty và người chuyển kho qua
+  /// lại, nên không cắt được dữ liệu chấm công theo kho — nghĩa là máy trạm nào
+  /// cũng giữ bản sao dữ liệu lương của cả công ty. Đây là đánh đổi có chủ ý:
+  /// bảng lương của một người phải cộng được xuyên kho.
+  PayrollSyncData changesSince(DateTime? since, {int limit = 500}) {
     final ms = timeToMillis(since ?? DateTime.fromMillisecondsSinceEpoch(0));
 
-    String scope(String column) {
-      if (allowedStations == null) return '';
-      if (allowedStations.isEmpty) return ' AND 0';
-      return ' AND $column IN (SELECT id FROM doan WHERE station_code IN '
-          '(${_marks(allowedStations.length)}))';
-    }
-
-    List<T> load<T>(
-      String table,
-      T Function(Map<String, Object?>) parse, {
-      required String scopeColumn,
-    }) {
-      final filter = table == 'doan'
-          ? (allowedStations == null
-              ? ''
-              : allowedStations.isEmpty
-                  ? ' AND 0'
-                  : ' AND station_code IN (${_marks(allowedStations.length)})')
-          : scope(scopeColumn);
-      return _db
-          .select(
-            'SELECT * FROM $table WHERE updated_at > ?$filter ORDER BY updated_at LIMIT ?',
-            [ms, if (filter.contains('?')) ...?allowedStations, limit],
-          )
-          .map((r) => parse(r))
-          .toList();
-    }
+    List<T> load<T>(String table, T Function(Map<String, Object?>) parse) => _db
+        .select(
+          'SELECT * FROM $table WHERE updated_at > ? ORDER BY updated_at LIMIT ?',
+          [ms, limit],
+        )
+        .map((r) => parse(r))
+        .toList();
 
     return PayrollSyncData(
-      crews: load('doan', Crew.fromJson, scopeColumn: 'id'),
-      phases: load('giai_doan_luong', WagePhase.fromJson, scopeColumn: 'crew_id'),
-      bands: load('muc_luong', WageBand.fromJson, scopeColumn: 'crew_id'),
-      rates: load('gia_luong', WageRate.fromJson, scopeColumn: 'crew_id'),
-      workers: load('nhan_vien', Worker.fromJson, scopeColumn: 'crew_id'),
-      attendances: load('cham_cong', Attendance.fromJson, scopeColumn: 'crew_id'),
-      entries: load('so_tien', PayrollEntry.fromJson, scopeColumn: 'crew_id'),
+      crews: load('doan', Crew.fromJson),
+      phases: load('giai_doan_luong', WagePhase.fromJson),
+      bands: load('muc_luong', WageBand.fromJson),
+      rates: load('gia_luong', WageRate.fromJson),
+      workers: load('nhan_vien', Worker.fromJson),
+      attendances: load('cham_cong', Attendance.fromJson),
+      entries: load('so_tien', PayrollEntry.fromJson),
     );
   }
 
@@ -534,8 +521,6 @@ class PayrollRepository {
   }
 
   // ================================================================= nội bộ
-
-  static String _marks(int count) => List.filled(count, '?').join(',');
 
   T? _one<T>(String table, String id, T Function(Map<String, Object?>) parse) {
     final rows = _db.select('SELECT * FROM $table WHERE id = ?', [id]);

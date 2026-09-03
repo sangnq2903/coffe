@@ -124,14 +124,30 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
             padded: false,
             trailing: Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: FilledButton.icon(
-                onPressed: () => _editWorker(),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, 38),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                ),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Thêm'),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_dangLam.isNotEmpty)
+                    OutlinedButton.icon(
+                      onPressed: _transferMany,
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 38),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                      ),
+                      icon: const Icon(Icons.swap_horiz, size: 18),
+                      label: const Text('Chuyển kho'),
+                    ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () => _editWorker(),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 38),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Thêm'),
+                  ),
+                ],
               ),
             ),
             child: _dangLam.isEmpty
@@ -183,6 +199,9 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
       ),
       title: Text(worker.name),
       subtitle: Text([
+        // Kho đứng trước mức lương vì đây là thứ hay đổi nhất — người trong
+        // đoàn chuyển qua lại giữa các kho.
+        worker.stationCode == null ? 'CHƯA GÁN KHO' : 'Kho ${worker.stationCode}',
         band?.name ?? 'CHƯA GÁN MỨC LƯƠNG',
         if (worker.phone != null && worker.phone!.isNotEmpty) worker.phone!,
         if (worker.joinDate != null) 'vào ${formatDate(worker.joinDate)}',
@@ -191,12 +210,15 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
       trailing: PopupMenuButton<String>(
         onSelected: (value) => switch (value) {
           'sua' => _editWorker(worker),
+          'chuyen-kho' => _transferMany(only: worker),
           'nghi' => _run(() => _client!.stopWorker(worker.id).then((_) {})),
           'lam-lai' => _run(() => _client!.resumeWorker(worker.id).then((_) {})),
           _ => null,
         },
         itemBuilder: (context) => [
           const PopupMenuItem(value: 'sua', child: Text('Sửa thông tin')),
+          if (working)
+            const PopupMenuItem(value: 'chuyen-kho', child: Text('Chuyển kho')),
           if (working)
             const PopupMenuItem(value: 'nghi', child: Text('Cho nghỉ làm'))
           else
@@ -213,7 +235,11 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
     }
     final result = await showDialog<Map<String, Object?>>(
       context: context,
-      builder: (context) => _WorkerDialog(worker: worker, bands: _wage.bands),
+      builder: (context) => _WorkerDialog(
+        worker: worker,
+        bands: _wage.bands,
+        stations: context.read<ServerConnection>().stations,
+      ),
     );
     if (result == null || !mounted) return;
     await _run(() => _client!
@@ -222,10 +248,45 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
           id: worker?.id,
           name: result['name'] as String,
           phone: result['phone'] as String?,
+          stationCode: result['station_code'] as String?,
           bandId: result['band_id'] as String?,
           joinDate: result['join_date'] as DateTime?,
         )
         .then((_) {}));
+  }
+
+  /// Chuyển người sang kho khác, có hiệu lực từ bây giờ.
+  ///
+  /// Truyền [only] để chuyển đúng một người; bỏ trống thì mở hộp thoại chọn
+  /// nhiều người cùng lúc — cả tổ chuyển sang kho khác là chuyện thường.
+  Future<void> _transferMany({Worker? only}) async {
+    final stations = context.read<ServerConnection>().stations;
+    if (stations.isEmpty) {
+      _snack('Chưa có kho nào. Bật máy trạm lên rồi quay lại.');
+      return;
+    }
+
+    final result = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (context) => _TransferDialog(
+        workers: only != null ? [only] : _dangLam,
+        stations: stations,
+        preselect: only != null ? {only.id} : const {},
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    final ids = (result['worker_ids'] as List).cast<String>();
+    final kho = result['station_code'] as String;
+    await _run(() async {
+      final moved = await _client!.transferWorkers(
+        crewId: widget.crew.id,
+        workerIds: ids,
+        stationCode: kho,
+      );
+      _snack('Đã chuyển ${moved.length} người sang kho $kho. '
+          'Những ngày đã chấm công vẫn tính cho kho cũ.');
+    });
   }
 
   // ------------------------------------------------------------- cấu hình
@@ -556,10 +617,11 @@ class _PhaseDialogState extends State<_PhaseDialog> {
 }
 
 class _WorkerDialog extends StatefulWidget {
-  const _WorkerDialog({this.worker, required this.bands});
+  const _WorkerDialog({this.worker, required this.bands, required this.stations});
 
   final Worker? worker;
   final List<WageBand> bands;
+  final List<Station> stations;
 
   @override
   State<_WorkerDialog> createState() => _WorkerDialogState();
@@ -570,6 +632,7 @@ class _WorkerDialogState extends State<_WorkerDialog> {
   late final _name = TextEditingController(text: widget.worker?.name ?? '');
   late final _phone = TextEditingController(text: widget.worker?.phone ?? '');
   late String? _bandId = widget.worker?.bandId;
+  late String? _stationCode = widget.worker?.stationCode;
   late DateTime _joinDate = widget.worker?.joinDate ?? DateTime.now();
 
   @override
@@ -594,6 +657,25 @@ class _WorkerDialogState extends State<_WorkerDialog> {
                   controller: _phone,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(labelText: 'Điện thoại'),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  value: widget.stations.any((s) => s.code == _stationCode)
+                      ? _stationCode
+                      : null,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Kho đang làm',
+                    helperText: 'Đổi được bất cứ lúc nào bằng chức năng "Chuyển kho"',
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                        value: null, child: Text('Chưa gán kho')),
+                    for (final s in widget.stations)
+                      DropdownMenuItem<String?>(
+                          value: s.code, child: Text('${s.name} (${s.code})')),
+                  ],
+                  onChanged: (v) => setState(() => _stationCode = v),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -634,6 +716,7 @@ class _WorkerDialogState extends State<_WorkerDialog> {
               Navigator.pop(context, {
                 'name': _name.text.trim(),
                 'phone': _phone.text.trim(),
+                'station_code': _stationCode,
                 'band_id': _bandId,
                 'join_date': _joinDate,
               });
@@ -642,4 +725,123 @@ class _WorkerDialogState extends State<_WorkerDialog> {
           ),
         ],
       );
+}
+
+/// Chọn người và kho đích để chuyển.
+///
+/// Cho chọn nhiều người vì cả tổ chuyển sang kho khác là chuyện thường; chuyển
+/// từng người một thì vừa lâu vừa dễ sót.
+class _TransferDialog extends StatefulWidget {
+  const _TransferDialog({
+    required this.workers,
+    required this.stations,
+    required this.preselect,
+  });
+
+  final List<Worker> workers;
+  final List<Station> stations;
+  final Set<String> preselect;
+
+  @override
+  State<_TransferDialog> createState() => _TransferDialogState();
+}
+
+class _TransferDialogState extends State<_TransferDialog> {
+  late final Set<String> _chosen = {...widget.preselect};
+  late String _stationCode = widget.stations.first.code;
+
+  @override
+  Widget build(BuildContext context) {
+    final single = widget.workers.length == 1;
+    return AlertDialog(
+      title: Text(single ? 'Chuyển kho cho ${widget.workers.single.name}' : 'Chuyển kho'),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DropdownButtonFormField<String>(
+              value: _stationCode,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Chuyển sang kho *'),
+              items: widget.stations
+                  .map((s) => DropdownMenuItem(
+                        value: s.code,
+                        child: Text('${s.name} (${s.code})'),
+                      ))
+                  .toList(),
+              onChanged: (v) => setState(() => _stationCode = v ?? _stationCode),
+            ),
+            const SizedBox(height: 12),
+            if (!single) ...[
+              Row(
+                children: [
+                  Text('Chọn người (${_chosen.length}/${widget.workers.length})',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => setState(() {
+                      if (_chosen.length == widget.workers.length) {
+                        _chosen.clear();
+                      } else {
+                        _chosen.addAll(widget.workers.map((w) => w.id));
+                      }
+                    }),
+                    child: Text(_chosen.length == widget.workers.length
+                        ? 'Bỏ chọn hết'
+                        : 'Chọn hết'),
+                  ),
+                ],
+              ),
+              // Danh sách có thể dài nên giới hạn chiều cao rồi cho cuộn, chứ
+              // không thì hộp thoại tràn khỏi màn hình.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 300),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: widget.workers.length,
+                  itemBuilder: (context, i) {
+                    final w = widget.workers[i];
+                    return CheckboxListTile(
+                      dense: true,
+                      value: _chosen.contains(w.id),
+                      title: Text(w.name),
+                      subtitle: Text(w.stationCode == null
+                          ? 'chưa gán kho'
+                          : 'đang ở ${w.stationCode}'),
+                      onChanged: (on) => setState(() {
+                        if (on ?? false) {
+                          _chosen.add(w.id);
+                        } else {
+                          _chosen.remove(w.id);
+                        }
+                      }),
+                    );
+                  },
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            const Text(
+              'Chỉ đổi kho từ bây giờ. Những ngày đã chấm công vẫn tính cho kho cũ.',
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Huỷ')),
+        FilledButton(
+          onPressed: _chosen.isEmpty
+              ? null
+              : () => Navigator.pop(context, {
+                    'worker_ids': _chosen.toList(),
+                    'station_code': _stationCode,
+                  }),
+          child: const Text('Chuyển'),
+        ),
+      ],
+    );
+  }
 }

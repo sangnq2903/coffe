@@ -331,7 +331,8 @@ test thì test sẽ đỏ.
 
 | Khái niệm | Nghĩa |
 |---|---|
-| **Đoàn** | Một mùa vụ tại một kho. Mỗi mùa lập đoàn mới; **một người chỉ thuộc một đoàn** |
+| **Đoàn** | Một mùa vụ. Đoàn thuộc **công ty**, không thuộc kho nào. Mỗi mùa lập đoàn mới; **một người chỉ thuộc một đoàn** |
+| **Kho đang làm** | Thuộc tính của **từng người**, đổi được bất cứ lúc nào bằng chức năng **Chuyển kho** (chuyển một người hoặc cả tổ) |
 | **Giai đoạn lương** | Đầu mùa và mùa rộ — khác nhau **mức lương**, dùng chung danh sách người. Mốc chuyển khai bằng ngày |
 | **Mức lương** | Bảng dùng chung ("Thợ chính", "Thợ phụ"). Ai có thoả thuận riêng thì **đặt giá riêng**, không bị ảnh hưởng khi sửa bảng chung |
 
@@ -376,6 +377,22 @@ nhảy thì không ai đối chiếu nổi. Muốn tính lại quá khứ phải
 **Lương tháng phải gộp rồi mới chia, không cộng tiền từng ngày.** Chia
 8.000.000 cho 30 ngày ra số lẻ vô hạn; cộng từng ngày lại thì đi làm đủ tháng
 không ra đúng 8.000.000. Người ta đếm tiền nên lệch vài đồng cũng thành thắc mắc.
+
+### Chuyển kho
+
+Người trong đoàn chuyển qua lại giữa kho 1 và kho 2 tuỳ thời điểm, nên:
+
+- **Kho gắn với từng người, không gắn với đoàn.** Chuyển kho chỉ đổi kho *hiện
+  tại* của người đó.
+- **Mỗi ngày chấm công lưu kèm kho tại thời điểm chấm.** Chuyển kho hôm nay
+  không làm đổi số liệu tháng trước, và sau này cộng ra được tiền công mà từng
+  kho đã gánh.
+- **Phần lương không giới hạn theo kho.** Tài khoản nào đăng nhập được cũng chấm
+  công và xem lương của cả công ty — người làm ở hai kho thì cắt theo kho sẽ
+  tính thiếu ngày. Riêng **phiếu cân vẫn tách theo kho** như cũ.
+
+Hệ quả cần biết: gói đồng bộ phần lương đi về **mọi** kho, nên dữ liệu lương của
+cả công ty nằm trên ổ cứng máy ở từng kho. Phiếu cân thì không.
 
 ---
 

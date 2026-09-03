@@ -243,7 +243,7 @@ class ApiClient {
 
   // ------------------------------------- lối vào cho các nhóm API tách file
 
-  /// Bốn hàm dưới đây mở ra để phần API của module khác (ví dụ chấm công) viết
+  /// Các hàm dưới đây mở ra để phần API của module khác (ví dụ chấm công) viết
   /// được ở file riêng dưới dạng extension, thay vì dồn hết vào lớp này.
   Future<Map<String, Object?>> getMap(String path, [Map<String, String>? query]) =>
       _getMap(path, query);
@@ -253,6 +253,9 @@ class ApiClient {
 
   Future<Map<String, Object?>> postMap(String path, Map<String, Object?> payload) =>
       _postMap(path, payload);
+
+  Future<List<Map<String, Object?>>> postList(String path, Map<String, Object?> payload) =>
+      _postList(path, payload);
 
   Future<void> deletePath(String path) => _delete(path);
 
@@ -344,6 +347,19 @@ class ApiClient {
       uri,
     );
     return body is Map<String, Object?> ? body : <String, Object?>{};
+  }
+
+  Future<List<Map<String, Object?>>> _postList(
+      String path, Map<String, Object?> payload) async {
+    final uri = _uri(path);
+    final body = await _send(
+      () => _http.post(uri, headers: _headers, body: jsonEncode(payload)),
+      uri,
+    );
+    if (body is List) {
+      return body.whereType<Map>().map((e) => e.cast<String, Object?>()).toList();
+    }
+    return const [];
   }
 
   Future<void> _delete(String path) async {

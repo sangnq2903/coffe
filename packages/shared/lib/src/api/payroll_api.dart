@@ -76,7 +76,6 @@ extension PayrollApi on ApiClient {
   Future<Crew> saveCrew({
     String? id,
     required String name,
-    required String stationCode,
     String season = '',
     DateTime? startDate,
     DateTime? endDate,
@@ -84,7 +83,6 @@ extension PayrollApi on ApiClient {
   }) async =>
       Crew.fromJson(await postMap(id == null ? '/api/doan' : '/api/doan/$id', {
         'name': name,
-        'station_code': stationCode,
         'season': season,
         'start_date': timeToMillisOrNull(startDate),
         'end_date': timeToMillisOrNull(endDate),
@@ -152,10 +150,11 @@ extension PayrollApi on ApiClient {
   // -------------------------------------------------------------- nhân viên
 
   Future<List<Worker>> workers(String crewId,
-          {WorkerStatus? status, String? query}) async =>
+          {WorkerStatus? status, String? query, String? stationCode}) async =>
       (await getList('/api/doan/$crewId/nhan-vien', {
         if (status != null) 'status': status.value,
         if (query != null && query.isNotEmpty) 'q': query,
+        if (stationCode != null && stationCode.isNotEmpty) 'kho': stationCode,
       }))
           .map(Worker.fromJson)
           .toList();
@@ -165,6 +164,7 @@ extension PayrollApi on ApiClient {
     String? id,
     required String name,
     String? phone,
+    String? stationCode,
     String? bandId,
     DateTime? joinDate,
     String? note,
@@ -173,10 +173,27 @@ extension PayrollApi on ApiClient {
         if (id != null) 'id': id,
         'name': name,
         'phone': phone,
+        'station_code': stationCode,
         'band_id': bandId,
         'join_date': timeToMillisOrNull(joinDate),
         'note': note,
       }));
+
+  /// Chuyển người sang kho khác, có hiệu lực từ bây giờ.
+  ///
+  /// Những ngày đã chấm công vẫn giữ kho ghi lúc đó, nên chuyển qua chuyển lại
+  /// bao nhiêu lần cũng không làm sai số liệu tháng trước.
+  Future<List<Worker>> transferWorkers({
+    required String crewId,
+    required List<String> workerIds,
+    required String stationCode,
+  }) async =>
+      (await postList('/api/doan/$crewId/chuyen-kho', {
+        'worker_ids': workerIds,
+        'station_code': stationCode,
+      }))
+          .map(Worker.fromJson)
+          .toList();
 
   Future<Worker> stopWorker(String workerId, {DateTime? leaveDate}) async =>
       Worker.fromJson(await postMap('/api/nhan-vien/$workerId/nghi-lam', {

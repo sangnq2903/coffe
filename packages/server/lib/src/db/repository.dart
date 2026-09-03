@@ -481,11 +481,7 @@ class Repository {
       vehicles: load('vehicles', Vehicle.fromJson),
       goodsTypes: load('goods_types', GoodsType.fromJson),
       tickets: load('tickets', WeighTicket.fromJson, byStation: true),
-      payroll: payroll.changesSince(
-        since,
-        allowedStations: limitByStation ? stations.toList() : null,
-        limit: limit,
-      ),
+      payroll: payroll.changesSince(since, limit: limit),
       serverTime: DateTime.now(),
     );
   }

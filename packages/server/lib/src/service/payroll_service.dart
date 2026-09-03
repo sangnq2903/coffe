@@ -14,13 +14,12 @@ class PayrollService {
 
   // ==================================================================== đoàn
 
-  Crew createCrew(Map<String, Object?> body, {required String stationCode}) {
+  Crew createCrew(Map<String, Object?> body) {
     final name = asString(body['name']).trim();
     if (name.isEmpty) throw BusinessException('Chưa nhập tên đoàn.');
 
     return _repo.upsertCrew(Crew.create(
       name: name,
-      stationCode: stationCode,
       season: asString(body['season']).trim(),
       startDate: asTimeOrNull(body['start_date']),
       endDate: asTimeOrNull(body['end_date']),
@@ -211,6 +210,7 @@ class PayrollService {
             crewId: crewId,
             name: name,
             phone: asStringOrNull(body['phone']),
+            stationCode: asStringOrNull(body['station_code']),
             bandId: bandId,
             joinDate: asTimeOrNull(body['join_date']) ?? DateTime.now(),
             note: asStringOrNull(body['note']),
@@ -218,11 +218,41 @@ class PayrollService {
         : existing.copyWith(
             name: name,
             phone: asStringOrNull(body['phone']),
+            stationCode: asStringOrNull(body['station_code']),
             bandId: bandId,
             joinDate: asTimeOrNull(body['join_date']),
             note: asStringOrNull(body['note']),
           );
     return _repo.upsertWorker(worker);
+  }
+
+  /// Chuyển một hoặc nhiều người sang kho khác, có hiệu lực từ bây giờ.
+  ///
+  /// Chỉ đổi kho **hiện tại** của họ. Những ngày đã chấm công vẫn giữ kho ghi
+  /// lúc đó, nên chuyển qua chuyển lại bao nhiêu lần cũng không làm sai số liệu
+  /// tháng trước — và cộng ra được tiền công mà từng kho đã gánh.
+  List<Worker> transferWorkers({
+    required String crewId,
+    required List<String> workerIds,
+    required String stationCode,
+  }) {
+    _requireCrew(crewId);
+    final kho = stationCode.trim().toUpperCase();
+    if (kho.isEmpty) throw BusinessException('Chưa chọn kho để chuyển sang.');
+    if (workerIds.isEmpty) throw BusinessException('Chưa chọn người nào để chuyển.');
+
+    final result = <Worker>[];
+    for (final id in workerIds) {
+      final worker = _repo.workerById(id);
+      if (worker == null || worker.deleted) {
+        throw BusinessException('Không tìm thấy nhân viên trong danh sách chuyển.');
+      }
+      if (worker.crewId != crewId) {
+        throw BusinessException('Nhân viên "${worker.name}" không thuộc đoàn này.');
+      }
+      result.add(_repo.upsertWorker(worker.copyWith(stationCode: kho)));
+    }
+    return result;
   }
 
   /// Cho một người nghỉ làm.

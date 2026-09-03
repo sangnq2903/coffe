@@ -17,18 +17,18 @@ enum CrewStatus {
       );
 }
 
-/// Một **đoàn** — tương ứng một mùa vụ tại một kho.
+/// Một **đoàn** — tương ứng một mùa vụ.
 ///
-/// Mỗi mùa lập một đoàn mới với danh sách người riêng; một người chỉ thuộc một
-/// đoàn. Trong đoàn có hai giai đoạn lương (đầu mùa, mùa rộ) dùng chung danh
-/// sách người đó.
+/// Đoàn thuộc về công ty chứ không thuộc kho nào: người trong đoàn chuyển qua
+/// lại giữa các kho tuỳ thời điểm, nên kho là thuộc tính của **từng người**
+/// (xem [Worker.stationCode]) chứ không của cả đoàn.
 ///
-/// Tiền chỉ quyết toán một lần vào cuối mùa; trong mùa công nhân chỉ được ứng.
+/// Trong đoàn có hai giai đoạn lương (đầu mùa, mùa rộ) dùng chung danh sách
+/// người. Tiền chỉ quyết toán một lần vào cuối mùa; trong mùa chỉ được ứng.
 class Crew {
   const Crew({
     required this.id,
     required this.name,
-    required this.stationCode,
     this.season = '',
     this.startDate,
     this.endDate,
@@ -40,7 +40,6 @@ class Crew {
 
   factory Crew.create({
     required String name,
-    required String stationCode,
     String season = '',
     DateTime? startDate,
     DateTime? endDate,
@@ -49,7 +48,6 @@ class Crew {
       Crew(
         id: newUuid(),
         name: name,
-        stationCode: stationCode.toUpperCase(),
         season: season,
         startDate: startDate,
         endDate: endDate,
@@ -60,7 +58,6 @@ class Crew {
   factory Crew.fromJson(Map<String, Object?> json) => Crew(
         id: asString(json['id']),
         name: asString(json['name']),
-        stationCode: asString(json['station_code']),
         season: asString(json['season']),
         startDate: asTimeOrNull(json['start_date']),
         endDate: asTimeOrNull(json['end_date']),
@@ -72,9 +69,6 @@ class Crew {
 
   final String id;
   final String name;
-
-  /// Kho mà đoàn này thuộc về — quyết định ai được xem, giống phiếu cân.
-  final String stationCode;
 
   /// Nhãn niên vụ, ví dụ `2025-2026`.
   final String season;
@@ -92,7 +86,6 @@ class Crew {
   Map<String, Object?> toJson() => {
         'id': id,
         'name': name,
-        'station_code': stationCode,
         'season': season,
         'start_date': timeToMillisOrNull(startDate),
         'end_date': timeToMillisOrNull(endDate),
@@ -114,7 +107,6 @@ class Crew {
       Crew(
         id: id,
         name: name ?? this.name,
-        stationCode: stationCode,
         season: season ?? this.season,
         startDate: startDate ?? this.startDate,
         endDate: endDate ?? this.endDate,

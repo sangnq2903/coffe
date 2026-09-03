@@ -27,6 +27,7 @@ class Worker {
     required this.crewId,
     required this.name,
     this.phone,
+    this.stationCode,
     this.bandId,
     this.joinDate,
     this.leaveDate,
@@ -40,6 +41,7 @@ class Worker {
     required String crewId,
     required String name,
     String? phone,
+    String? stationCode,
     String? bandId,
     DateTime? joinDate,
     String? note,
@@ -49,6 +51,7 @@ class Worker {
         crewId: crewId,
         name: name.trim(),
         phone: phone,
+        stationCode: stationCode?.toUpperCase(),
         bandId: bandId,
         joinDate: joinDate,
         note: note,
@@ -60,6 +63,7 @@ class Worker {
         crewId: asString(json['crew_id']),
         name: asString(json['name']),
         phone: asStringOrNull(json['phone']),
+        stationCode: asStringOrNull(json['station_code']),
         bandId: asStringOrNull(json['band_id']),
         joinDate: asTimeOrNull(json['join_date']),
         leaveDate: asTimeOrNull(json['leave_date']),
@@ -73,6 +77,14 @@ class Worker {
   final String crewId;
   final String name;
   final String? phone;
+
+  /// Kho người này **đang** làm.
+  ///
+  /// Người trong đoàn chuyển qua lại giữa các kho, nên đây là trạng thái hiện
+  /// tại chứ không phải nơi cố định. Lịch sử nằm ở từng ngày chấm công, mỗi
+  /// ngày ghi kèm kho tại thời điểm đó — chuyển kho hôm nay không làm đổi số
+  /// liệu tháng trước.
+  final String? stationCode;
 
   /// Mức lương đang hưởng. Bỏ trống nghĩa là người này có giá đặt riêng.
   final String? bandId;
@@ -92,6 +104,7 @@ class Worker {
         'crew_id': crewId,
         'name': name,
         'phone': phone,
+        'station_code': stationCode,
         'band_id': bandId,
         'join_date': timeToMillisOrNull(joinDate),
         'leave_date': timeToMillisOrNull(leaveDate),
@@ -104,6 +117,7 @@ class Worker {
   Worker copyWith({
     String? name,
     String? phone,
+    String? stationCode,
     String? bandId,
     DateTime? joinDate,
     DateTime? leaveDate,
@@ -116,6 +130,7 @@ class Worker {
         crewId: crewId,
         name: name ?? this.name,
         phone: phone ?? this.phone,
+        stationCode: stationCode?.toUpperCase() ?? this.stationCode,
         bandId: bandId ?? this.bandId,
         joinDate: joinDate ?? this.joinDate,
         leaveDate: leaveDate ?? this.leaveDate,

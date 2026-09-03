@@ -7,7 +7,11 @@ import '../../core/theme.dart';
 import '../../state/server_connection.dart';
 import 'crew_detail_screen.dart';
 
-/// Danh sách đoàn — mỗi đoàn là một mùa vụ tại một kho.
+/// Danh sách đoàn — mỗi đoàn là một mùa vụ.
+///
+/// Đoàn thuộc về công ty chứ không thuộc kho nào: người trong đoàn chuyển qua
+/// lại giữa các kho, nên kho là thuộc tính của từng người (xem màn hình chi
+/// tiết đoàn) chứ không của cả đoàn.
 class CrewsScreen extends StatefulWidget {
   const CrewsScreen({super.key});
 
@@ -55,27 +59,20 @@ class _CrewsScreenState extends State<CrewsScreen> {
     final q = _searchController.text.trim().toLowerCase();
     if (q.isEmpty) return _crews;
     return _crews
-        .where((c) => '${c.name} ${c.season} ${c.stationCode}'.toLowerCase().contains(q))
+        .where((c) => '${c.name} ${c.season}'.toLowerCase().contains(q))
         .toList();
   }
 
   Future<void> _createCrew() async {
     final conn = context.read<ServerConnection>();
-    final stations = conn.stations;
-    if (stations.isEmpty) {
-      _snack('Chưa có kho nào. Bật máy trạm lên rồi quay lại.');
-      return;
-    }
-
     final result = await showDialog<Map<String, Object?>>(
       context: context,
-      builder: (context) => _CrewDialog(stations: stations),
+      builder: (context) => const _CrewDialog(),
     );
     if (result == null || !mounted) return;
     try {
       await conn.client!.saveCrew(
         name: result['name'] as String,
-        stationCode: result['station'] as String,
         season: result['season'] as String,
         startDate: result['start'] as DateTime?,
       );
@@ -103,7 +100,7 @@ class _CrewsScreenState extends State<CrewsScreen> {
                 child: TextField(
                   controller: _searchController,
                   decoration: const InputDecoration(
-                    labelText: 'Tìm đoàn theo tên, niên vụ hoặc kho',
+                    labelText: 'Tìm đoàn theo tên hoặc niên vụ',
                     prefixIcon: Icon(Icons.search),
                   ),
                   onChanged: (_) => setState(() {}),
@@ -204,7 +201,7 @@ class _CrewCard extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     [
-                      'Kho ${crew.stationCode}',
+                      if (crew.season.isNotEmpty) 'Niên vụ ${crew.season}',
                       if (crew.startDate != null) 'từ ${formatDate(crew.startDate)}',
                     ].join(' • '),
                     style: const TextStyle(fontSize: 12.5, color: AppTheme.textMuted),
@@ -223,9 +220,7 @@ class _CrewCard extends StatelessWidget {
 }
 
 class _CrewDialog extends StatefulWidget {
-  const _CrewDialog({required this.stations});
-
-  final List<Station> stations;
+  const _CrewDialog();
 
   @override
   State<_CrewDialog> createState() => _CrewDialogState();
@@ -236,13 +231,11 @@ class _CrewDialogState extends State<_CrewDialog> {
   final _name = TextEditingController();
   final _season = TextEditingController();
 
-  String? _station;
   DateTime? _start;
 
   @override
   void initState() {
     super.initState();
-    _station = widget.stations.first.code;
     final now = DateTime.now();
     _season.text = '${now.year}-${now.year + 1}';
     _start = now;
@@ -277,22 +270,6 @@ class _CrewDialogState extends State<_CrewDialog> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: _station,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Kho *',
-                    helperText: 'Đoàn thuộc kho nào thì chỉ người của kho đó xem được',
-                  ),
-                  items: widget.stations
-                      .map((s) => DropdownMenuItem(
-                            value: s.code,
-                            child: Text('${s.name} (${s.code})'),
-                          ))
-                      .toList(),
-                  onChanged: (v) => setState(() => _station = v),
-                ),
-                const SizedBox(height: 12),
                 OutlinedButton.icon(
                   onPressed: () async {
                     final picked = await showDatePicker(
@@ -318,7 +295,6 @@ class _CrewDialogState extends State<_CrewDialog> {
               Navigator.pop(context, {
                 'name': _name.text.trim(),
                 'season': _season.text.trim(),
-                'station': _station!,
                 'start': _start,
               });
             },
