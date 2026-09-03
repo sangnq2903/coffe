@@ -378,6 +378,31 @@ nhảy thì không ai đối chiếu nổi. Muốn tính lại quá khứ phải
 8.000.000 cho 30 ngày ra số lẻ vô hạn; cộng từng ngày lại thì đi làm đủ tháng
 không ra đúng 8.000.000. Người ta đếm tiền nên lệch vài đồng cũng thành thắc mắc.
 
+### Chấm công theo ngày
+
+Màn hình đoàn mở ra là vào ngay tab **Chấm công** — đó là việc làm hằng ngày.
+
+- Một ngày có **ba trạng thái** cho mỗi người: đi làm (✓), nghỉ (✕) và **chưa
+  chấm** (ô trống). "Chưa chấm" là việc còn dở, "nghỉ" là đã chốt — lẫn hai cái
+  này thì cuối mùa không biết đã chấm đủ chưa.
+- Bấm là ghi ngay, không có nút "Lưu". Chấm cả chục người mà dồn lại rồi lưu thì
+  chỉ cần đóng màn hình là mất hết mà không ai biết.
+- **Ngày chưa thuộc giai đoạn lương nào thì không chấm được** — không tra ra
+  lương thì ghi vào cũng vô nghĩa. Màn hình chỉ thẳng sang tab cấu hình.
+- **Người chưa khai giá thì bị bỏ qua, kèm tên và lý do.** Một người mới vào
+  chưa gán mức lương không được làm cả đoàn không chấm công được, nhưng phải báo
+  rõ chứ không im lặng.
+- Người **vào làm sau** không hiện ở ngày trước đó, người **đã nghỉ** không hiện
+  ở ngày sau khi nghỉ. Ai đã có bản ghi ngày đó thì luôn hiện, kể cả nay đã nghỉ.
+
+Tab **Bảng tháng** là bảng người × ngày để đối chiếu và trả lương: mỗi ô một
+ngày, cuối dòng là số công và lương đã làm được, cuối bảng là tổng.
+
+**Nút "Tính lại lương"** ở tab bảng tháng là cái nút riêng mà mục "Hai điều dễ
+làm sai" bên dưới nói tới: bình thường ngày đã chấm giữ nguyên mức lương lúc
+chấm, bấm nút này mới lấy lại theo bảng giá hiện tại. Dùng khi khai sai giá rồi
+mới phát hiện; nó báo lại đúng những ngày nào đổi từ số nào sang số nào.
+
 ### Chuyển kho
 
 Người trong đoàn chuyển qua lại giữa kho 1 và kho 2 tuỳ thời điểm, nên:

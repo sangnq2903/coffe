@@ -366,6 +366,281 @@ void main() {
     });
   });
 
+  group('Chấm công', () {
+    /// Dựng nền để chấm công được: hai giai đoạn, một mức lương, một người.
+    ///
+    /// Đầu mùa 8 triệu tới 15/10, mùa rộ 12 triệu từ 16/10 — đúng ví dụ trong
+    /// README để đọc test là hiểu luật.
+    Future<Map<String, String>> dungNen() async {
+      final dauMua = await post('/api/doan/$doanA/giai-doan', {
+        'name': 'Đầu mùa',
+        'from_date': ngay(2026, 9, 1),
+        'to_date': ngay(2026, 10, 15),
+      });
+      final muaRo = await post('/api/doan/$doanA/giai-doan', {
+        'name': 'Mùa rộ',
+        'from_date': ngay(2026, 10, 16),
+      });
+      final muc = await post('/api/doan/$doanA/muc-luong', {'name': 'Thợ chính'});
+      await post('/api/doan/$doanA/gia-luong', {
+        'phase_id': dauMua['id'],
+        'band_id': muc['id'],
+        'monthly_amount': 8000000,
+      });
+      await post('/api/doan/$doanA/gia-luong', {
+        'phase_id': muaRo['id'],
+        'band_id': muc['id'],
+        'monthly_amount': 12000000,
+      });
+      final nv = await post('/api/doan/$doanA/nhan-vien', {
+        'name': 'A Tình',
+        'band_id': muc['id'],
+        'station_code': 'KHO01',
+        'join_date': ngay(2026, 9, 1),
+      });
+      return {
+        'dau_mua': dauMua['id']! as String,
+        'mua_ro': muaRo['id']! as String,
+        'muc': muc['id']! as String,
+        'nv': nv['id']! as String,
+      };
+    }
+
+    Future<Map<String, Object?>> chamCong(
+      String workerId,
+      List<int> days, {
+      int year = 2026,
+      int month = 9,
+      bool present = true,
+    }) async {
+      Map<String, Object?> last = const {};
+      for (final d in days) {
+        last = await post('/api/doan/$doanA/cham-cong', {
+          'date': ngay(year, month, d),
+          'marks': {workerId: present},
+        });
+      }
+      return last;
+    }
+
+    Future<Map<String, Object?>> bangThang({int year = 2026, int month = 9}) async =>
+        (await body(await call('GET',
+            '/api/doan/$doanA/cham-cong/thang?year=$year&month=$month',
+            token: tokenTong))) as Map<String, Object?>;
+
+    test('ngày chưa thuộc giai đoạn nào thì không chấm được', () async {
+      final nen = await dungNen();
+      // 31/8 nằm ngoài mọi giai đoạn — chấm được thì lấy lương ở đâu ra.
+      final res = await call('POST', '/api/doan/$doanA/cham-cong',
+          token: tokenTong,
+          body: {
+            'date': ngay(2026, 8, 31),
+            'marks': {nen['nv']!: true},
+          });
+      final text = await res.readAsString();
+      expect(res.statusCode, 400);
+      expect(text, contains('chưa thuộc giai đoạn lương nào'));
+    });
+
+    test('chưa chấm khác với chấm là nghỉ', () async {
+      final nen = await dungNen();
+
+      final truoc = (await body(await call('GET',
+          '/api/doan/$doanA/cham-cong?date=${ngay(2026, 9, 10)}',
+          token: tokenTong))) as Map;
+      final dongTruoc = ((truoc['rows'] as List).single as Map);
+      expect(dongTruoc['present'], isNull, reason: 'chưa chấm thì phải là null');
+      expect(truoc['marked_count'], 0);
+
+      final sau = await post('/api/doan/$doanA/cham-cong', {
+        'date': ngay(2026, 9, 10),
+        'marks': {nen['nv']!: false},
+      });
+      final dongSau = ((sau['rows'] as List).single as Map);
+      expect(dongSau['present'], false, reason: 'đã chấm là nghỉ thì phải là false');
+      expect(sau['marked_count'], 1);
+      expect(sau['present_count'], 0);
+    });
+
+    test('người chưa gán mức lương thì bị bỏ qua kèm lý do', () async {
+      final nen = await dungNen();
+      final chuaGan = await post('/api/doan/$doanA/nhan-vien', {'name': 'Người mới'});
+
+      final res = await post('/api/doan/$doanA/cham-cong', {
+        'date': ngay(2026, 9, 10),
+        'marks': {nen['nv']!: true, chuaGan['id']!: true},
+      });
+
+      final bo = res['skipped'] as List;
+      expect(bo.length, 1);
+      expect((bo.single as Map)['name'], 'Người mới');
+      expect((bo.single as Map)['reason'], contains('chưa gán mức lương'));
+      // Một người thiếu cấu hình không được làm cả đoàn không chấm công được.
+      expect(res['present_count'], 1);
+    });
+
+    test('người vào làm sau không hiện ở ngày trước đó', () async {
+      await dungNen();
+      await post('/api/doan/$doanA/nhan-vien', {
+        'name': 'Vào giữa tháng',
+        'join_date': ngay(2026, 9, 15),
+      });
+
+      final ngay10 = (await body(await call('GET',
+          '/api/doan/$doanA/cham-cong?date=${ngay(2026, 9, 10)}',
+          token: tokenTong))) as Map;
+      final ngay20 = (await body(await call('GET',
+          '/api/doan/$doanA/cham-cong?date=${ngay(2026, 9, 20)}',
+          token: tokenTong))) as Map;
+
+      expect((ngay10['rows'] as List).length, 1);
+      expect((ngay20['rows'] as List).length, 2);
+    });
+
+    test('đi làm đủ tháng ra đúng lương tháng, không lệch vài đồng', () async {
+      final nen = await dungNen();
+      // Tháng 9 có 30 ngày; chia 8.000.000 cho 30 ra số lẻ vô hạn, cộng dồn
+      // từng ngày sẽ không ra đúng 8.000.000.
+      await chamCong(nen['nv']!, [for (var d = 1; d <= 30; d++) d]);
+
+      final thang = await bangThang();
+      final dong = ((thang['rows'] as List).single as Map);
+      expect(dong['days_worked'], 30);
+      expect(dong['wage_earned'], 8000000);
+      expect(thang['total_wage'], 8000000);
+    });
+
+    test('nghỉ ngày nào mất công ngày đó', () async {
+      final nen = await dungNen();
+      await chamCong(nen['nv']!, [for (var d = 1; d <= 29; d++) d]);
+      await chamCong(nen['nv']!, [30], present: false);
+
+      final dong = (((await bangThang())['rows'] as List).single as Map);
+      expect(dong['days_worked'], 29);
+      expect(dong['wage_earned'], (8000000 * 29 / 30).round());
+    });
+
+    test('tháng vắt qua hai giai đoạn thì cộng hai phần', () async {
+      final nen = await dungNen();
+      // Tháng 10 có 31 ngày: 15 ngày đầu mùa + 16 ngày mùa rộ.
+      await chamCong(nen['nv']!, [for (var d = 1; d <= 31; d++) d], month: 10);
+
+      final dong = (((await bangThang(month: 10))['rows'] as List).single as Map);
+      expect(dong['days_worked'], 31);
+      expect(
+        dong['wage_earned'],
+        (8000000 * 15 / 31 + 12000000 * 16 / 31).round(),
+        reason: 'gộp theo từng mức lương rồi mới chia',
+      );
+    });
+
+    test('sửa bảng giá không làm đổi lương ngày đã chấm', () async {
+      final nen = await dungNen();
+      await chamCong(nen['nv']!, [1, 2, 3]);
+
+      // Tăng giá đầu mùa lên gấp đôi rồi chấm thêm một ngày nữa.
+      await post('/api/doan/$doanA/gia-luong', {
+        'phase_id': nen['dau_mua'],
+        'band_id': nen['muc'],
+        'monthly_amount': 16000000,
+      });
+      await chamCong(nen['nv']!, [4]);
+
+      final dong = (((await bangThang())['rows'] as List).single as Map);
+      expect(
+        dong['wage_earned'],
+        (8000000 * 3 / 30 + 16000000 * 1 / 30).round(),
+        reason: 'ba ngày cũ giữ giá cũ, ngày mới mới theo giá mới',
+      );
+    });
+
+    test('chấm lại ngày cũ vẫn giữ mức lương lúc chấm', () async {
+      final nen = await dungNen();
+      await chamCong(nen['nv']!, [1, 2, 3]);
+      await post('/api/doan/$doanA/gia-luong', {
+        'phase_id': nen['dau_mua'],
+        'band_id': nen['muc'],
+        'monthly_amount': 16000000,
+      });
+
+      // Sửa ngày 3 thành nghỉ rồi cho đi làm lại — không được nhân giá mới.
+      await chamCong(nen['nv']!, [3], present: false);
+      await chamCong(nen['nv']!, [3]);
+
+      final dong = (((await bangThang())['rows'] as List).single as Map);
+      expect(dong['wage_earned'], (8000000 * 3 / 30).round());
+    });
+
+    test('nút tính lại mới đổi mức lương của quá khứ', () async {
+      final nen = await dungNen();
+      await chamCong(nen['nv']!, [1, 2, 3]);
+      await post('/api/doan/$doanA/gia-luong', {
+        'phase_id': nen['dau_mua'],
+        'band_id': nen['muc'],
+        'monthly_amount': 16000000,
+      });
+
+      final ketQua = await post('/api/doan/$doanA/cham-cong/tinh-lai',
+          {'year': 2026, 'month': 9});
+      expect(ketQua['count'], 3);
+      expect((ketQua['changed'] as List).length, 3);
+      expect(((ketQua['changed'] as List).first as Map)['from'], 8000000);
+      expect(((ketQua['changed'] as List).first as Map)['to'], 16000000);
+
+      final dong = (((await bangThang())['rows'] as List).single as Map);
+      expect(dong['wage_earned'], (16000000 * 3 / 30).round());
+
+      // Bấm lại lần nữa thì không còn gì để đổi.
+      final lanHai = await post('/api/doan/$doanA/cham-cong/tinh-lai',
+          {'year': 2026, 'month': 9});
+      expect(lanHai['count'], 0);
+    });
+
+    test('ngày chấm công lưu kèm kho lúc đó', () async {
+      final nen = await dungNen();
+      await chamCong(nen['nv']!, [10]);
+
+      await post('/api/doan/$doanA/chuyen-kho', {
+        'worker_ids': [nen['nv']],
+        'station_code': 'KHO02',
+      });
+      await chamCong(nen['nv']!, [11]);
+
+      final ghi = repo.payroll.attendances(crewId: doanA);
+      expect(ghi.firstWhere((a) => a.date.day == 10).stationCode, 'KHO01');
+      expect(ghi.firstWhere((a) => a.date.day == 11).stationCode, 'KHO02');
+    });
+
+    test('thiếu ngày hoặc thiếu danh sách thì bị từ chối', () async {
+      final nen = await dungNen();
+      await post('/api/doan/$doanA/cham-cong',
+          {'marks': {nen['nv']!: true}}, expectStatus: 400);
+      await post('/api/doan/$doanA/cham-cong',
+          {'date': ngay(2026, 9, 10)}, expectStatus: 400);
+      await post('/api/doan/$doanA/cham-cong',
+          {'date': ngay(2026, 9, 10), 'marks': const {}}, expectStatus: 400);
+    });
+
+    test('không chấm được cho người của đoàn khác', () async {
+      final nen = await dungNen();
+      final nguoiDoanB = await post('/api/doan/$doanB/nhan-vien', {'name': 'Người đoàn B'});
+      await post('/api/doan/$doanA/cham-cong', {
+        'date': ngay(2026, 9, 10),
+        'marks': {nen['nv']!: true, nguoiDoanB['id']!: true},
+      }, expectStatus: 400);
+    });
+
+    test('tháng ngoài 1-12 thì bị từ chối', () async {
+      await dungNen();
+      expect(
+        (await call('GET', '/api/doan/$doanA/cham-cong/thang?year=2026&month=13',
+                token: tokenTong))
+            .statusCode,
+        400,
+      );
+    });
+  });
+
   group('Chưa đăng nhập', () {
     test('mọi đường dẫn chấm công đều bị chặn', () async {
       for (final path in [
@@ -373,6 +648,8 @@ void main() {
         '/api/doan/$doanA',
         '/api/doan/$doanA/bang-luong',
         '/api/doan/$doanA/nhan-vien',
+        '/api/doan/$doanA/cham-cong',
+        '/api/doan/$doanA/cham-cong/thang',
       ]) {
         expect((await call('GET', path)).statusCode, 401, reason: path);
       }

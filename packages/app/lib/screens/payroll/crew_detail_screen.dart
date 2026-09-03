@@ -5,11 +5,13 @@ import 'package:provider/provider.dart';
 import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../state/server_connection.dart';
+import 'attendance_tab.dart';
 
-/// Chi tiết một đoàn: danh sách nhân viên và cấu hình lương.
+/// Chi tiết một đoàn: chấm công, bảng tháng, nhân viên và cấu hình lương.
 ///
-/// Phần chấm công và tiền lương làm ở bước sau; màn hình này lo phần khai báo
-/// nền — không khai đủ giai đoạn và giá thì chấm công không tra ra lương.
+/// Mở ra là vào ngay tab chấm công vì đó là việc làm hằng ngày. Không khai đủ
+/// giai đoạn và giá thì chấm công không tra ra lương, nên tab cấu hình có cảnh
+/// báo riêng.
 class CrewDetailScreen extends StatefulWidget {
   const CrewDetailScreen({super.key, required this.crew});
 
@@ -75,12 +77,16 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: Text(widget.crew.displayName),
           bottom: const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             tabs: [
+              Tab(icon: Icon(Icons.how_to_reg), text: 'Chấm công'),
+              Tab(icon: Icon(Icons.table_chart), text: 'Bảng tháng'),
               Tab(icon: Icon(Icons.people), text: 'Nhân viên'),
               Tab(icon: Icon(Icons.tune), text: 'Cấu hình lương'),
             ],
@@ -103,7 +109,12 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
               ),
             Expanded(
               child: TabBarView(
-                children: [_workersTab(), _configTab()],
+                children: [
+                  AttendanceDayTab(crewId: widget.crew.id),
+                  AttendanceMonthTab(crewId: widget.crew.id),
+                  _workersTab(),
+                  _configTab(),
+                ],
               ),
             ),
           ],

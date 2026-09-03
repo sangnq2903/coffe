@@ -61,6 +61,230 @@ class MissingRate {
   final String phaseName;
 }
 
+/// Bảng chấm công của một ngày.
+class DaySheet {
+  const DaySheet({
+    required this.date,
+    required this.daysInMonth,
+    this.phase,
+    this.rows = const [],
+    this.missingRate = const [],
+    this.skipped = const [],
+  });
+
+  factory DaySheet.fromJson(Map<String, Object?> json) => DaySheet(
+        date: asTime(json['date']),
+        daysInMonth: asInt(json['days_in_month'], fallback: 30),
+        phase: json['phase'] == null
+            ? null
+            : WagePhase.fromJson((json['phase']! as Map).cast<String, Object?>()),
+        rows: asMapList(json['rows']).map(DayRow.fromJson).toList(),
+        missingRate: asMapList(json['missing_rate'])
+            .map((e) => SkippedWorker(
+                  workerId: asString(e['worker_id']),
+                  name: asString(e['name']),
+                  reason: asString(e['reason'], fallback: 'chưa tra ra lương'),
+                ))
+            .toList(),
+        skipped: asMapList(json['skipped'])
+            .map((e) => SkippedWorker(
+                  workerId: asString(e['worker_id']),
+                  name: asString(e['name']),
+                  reason: asString(e['reason']),
+                ))
+            .toList(),
+      );
+
+  final DateTime date;
+  final int daysInMonth;
+
+  /// Giai đoạn lương của ngày này. `null` nghĩa là chưa khai — chấm công ngày
+  /// đó sẽ bị chặn vì không tra ra lương.
+  final WagePhase? phase;
+
+  final List<DayRow> rows;
+
+  /// Người chưa tra ra lương nên chấm công sẽ bỏ qua.
+  final List<SkippedWorker> missingRate;
+
+  /// Người vừa bị bỏ qua ở lần lưu gần nhất.
+  final List<SkippedWorker> skipped;
+
+  int get presentCount => rows.where((r) => r.present == true).length;
+  int get markedCount => rows.where((r) => r.present != null).length;
+  bool get isEmpty => rows.isEmpty;
+}
+
+/// Một người trong bảng chấm công ngày.
+class DayRow {
+  const DayRow({
+    required this.workerId,
+    required this.name,
+    this.stationCode,
+    this.attendanceId,
+    this.present,
+    this.monthlyAmount,
+    required this.daysInMonth,
+    this.note,
+  });
+
+  factory DayRow.fromJson(Map<String, Object?> json) => DayRow(
+        workerId: asString(json['worker_id']),
+        name: asString(json['name']),
+        stationCode: asStringOrNull(json['station_code']),
+        attendanceId: asStringOrNull(json['attendance_id']),
+        present: json['present'] == null ? null : asBool(json['present']),
+        monthlyAmount: asDoubleOrNull(json['monthly_amount']),
+        daysInMonth: asInt(json['days_in_month'], fallback: 30),
+        note: asStringOrNull(json['note']),
+      );
+
+  final String workerId;
+  final String name;
+  final String? stationCode;
+  final String? attendanceId;
+
+  /// `null` nghĩa là **chưa chấm** — khác với đã chấm là nghỉ.
+  final bool? present;
+
+  final double? monthlyAmount;
+  final int daysInMonth;
+  final String? note;
+
+  /// Tiền một ngày công, `null` nếu chưa tra ra lương tháng.
+  double? get dailyAmount => monthlyAmount == null || daysInMonth <= 0
+      ? null
+      : monthlyAmount! / daysInMonth;
+}
+
+/// Người bị bỏ qua khi chấm công, kèm lý do.
+class SkippedWorker {
+  const SkippedWorker({
+    required this.workerId,
+    required this.name,
+    required this.reason,
+  });
+
+  final String workerId;
+  final String name;
+  final String reason;
+}
+
+/// Bảng chấm công cả tháng.
+class MonthSheet {
+  const MonthSheet({
+    required this.year,
+    required this.month,
+    required this.daysInMonth,
+    this.rows = const [],
+    this.totalDaysWorked = 0,
+    this.totalWage = 0,
+  });
+
+  factory MonthSheet.fromJson(Map<String, Object?> json) => MonthSheet(
+        year: asInt(json['year'], fallback: DateTime.now().year),
+        month: asInt(json['month'], fallback: DateTime.now().month),
+        daysInMonth: asInt(json['days_in_month'], fallback: 30),
+        rows: asMapList(json['rows']).map(MonthRow.fromJson).toList(),
+        totalDaysWorked: asInt(json['total_days_worked']),
+        totalWage: asDouble(json['total_wage']),
+      );
+
+  final int year;
+  final int month;
+  final int daysInMonth;
+  final List<MonthRow> rows;
+  final int totalDaysWorked;
+  final double totalWage;
+}
+
+/// Một người trong bảng tháng.
+class MonthRow {
+  const MonthRow({
+    required this.workerId,
+    required this.name,
+    this.stationCode,
+    this.bandName,
+    this.presentDays = const {},
+    this.absentDays = const {},
+    this.daysWorked = 0,
+    this.wageEarned = 0,
+  });
+
+  factory MonthRow.fromJson(Map<String, Object?> json) => MonthRow(
+        workerId: asString(json['worker_id']),
+        name: asString(json['name']),
+        stationCode: asStringOrNull(json['station_code']),
+        bandName: asStringOrNull(json['band_name']),
+        presentDays: _days(json['present_days']),
+        absentDays: _days(json['absent_days']),
+        daysWorked: asInt(json['days_worked']),
+        wageEarned: asDouble(json['wage_earned']),
+      );
+
+  static Set<int> _days(Object? raw) =>
+      raw is List ? raw.map((e) => asInt(e)).toSet() : const {};
+
+  final String workerId;
+  final String name;
+  final String? stationCode;
+  final String? bandName;
+
+  /// Ngày trong tháng có đi làm.
+  final Set<int> presentDays;
+
+  /// Ngày đã chấm là nghỉ — khác với ngày chưa chấm.
+  final Set<int> absentDays;
+
+  final int daysWorked;
+  final double wageEarned;
+
+  /// Trạng thái một ngày: `true` đi làm, `false` nghỉ, `null` chưa chấm.
+  bool? stateOf(int day) {
+    if (presentDays.contains(day)) return true;
+    if (absentDays.contains(day)) return false;
+    return null;
+  }
+}
+
+/// Kết quả bấm nút tính lại lương của một tháng.
+class RecalcResult {
+  const RecalcResult({this.count = 0, this.changed = const []});
+
+  factory RecalcResult.fromJson(Map<String, Object?> json) => RecalcResult(
+        count: asInt(json['count']),
+        changed: asMapList(json['changed'])
+            .map((e) => RecalcChange(
+                  workerId: asString(e['worker_id']),
+                  name: asString(e['name']),
+                  date: asTime(e['date']),
+                  from: asDouble(e['from']),
+                  to: asDouble(e['to']),
+                ))
+            .toList(),
+      );
+
+  final int count;
+  final List<RecalcChange> changed;
+}
+
+/// Một ngày bị đổi mức lương khi tính lại.
+class RecalcChange {
+  const RecalcChange({
+    required this.workerId,
+    required this.name,
+    required this.date,
+    required this.from,
+    required this.to,
+  });
+
+  final String workerId;
+  final String name;
+  final DateTime date;
+  final double from;
+  final double to;
+}
+
 /// Các lời gọi API của module chấm công.
 extension PayrollApi on ApiClient {
   // ------------------------------------------------------------------- đoàn
@@ -202,4 +426,41 @@ extension PayrollApi on ApiClient {
 
   Future<Worker> resumeWorker(String workerId) async =>
       Worker.fromJson(await postMap('/api/nhan-vien/$workerId/lam-lai', const {}));
+
+  // ------------------------------------------------------------- chấm công
+
+  Future<DaySheet> daySheet(String crewId, DateTime date) async =>
+      DaySheet.fromJson(await getMap('/api/doan/$crewId/cham-cong', {
+        'date': timeToMillis(date).toString(),
+      }));
+
+  /// Chấm công cho một ngày.
+  ///
+  /// [marks] là `{id nhân viên: có đi làm}` — gửi cả người nghỉ chứ không chỉ
+  /// người đi làm, để phân biệt với ngày chưa chấm.
+  Future<DaySheet> markDay({
+    required String crewId,
+    required DateTime date,
+    required Map<String, bool> marks,
+    String? note,
+  }) async =>
+      DaySheet.fromJson(await postMap('/api/doan/$crewId/cham-cong', {
+        'date': timeToMillis(date),
+        'marks': marks,
+        'note': note,
+      }));
+
+  Future<MonthSheet> monthSheet(String crewId, {required int year, required int month}) async =>
+      MonthSheet.fromJson(await getMap('/api/doan/$crewId/cham-cong/thang', {
+        'year': '$year',
+        'month': '$month',
+      }));
+
+  /// Tính lại mức lương đã chốt của một tháng theo bảng giá hiện tại.
+  Future<RecalcResult> recalcMonth(String crewId,
+          {required int year, required int month}) async =>
+      RecalcResult.fromJson(await postMap('/api/doan/$crewId/cham-cong/tinh-lai', {
+        'year': year,
+        'month': month,
+      }));
 }

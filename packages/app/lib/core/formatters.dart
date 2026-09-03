@@ -16,6 +16,13 @@ String formatWeight(double? value) =>
 String formatDecimal(double? value) =>
     value == null ? '—' : _decimalFormat.format(value);
 
+/// Tiền luôn làm tròn tới đồng và không kèm đơn vị, để chỗ gọi tự ghép `đ`.
+///
+/// Lương chia theo ngày ra số lẻ vô hạn; hiện phần thập phân của đồng thì
+/// không ai đọc mà chỉ làm người ta nghi số sai.
+String formatMoney(double? value) =>
+    value == null ? '—' : _weightFormat.format(value.roundToDouble());
+
 String formatPercent(double? value) =>
     value == null ? '—' : '${_decimalFormat.format(value)}%';
 

@@ -278,6 +278,258 @@ class PayrollService {
     return _repo.upsertWorker(worker.copyWith(status: WorkerStatus.dangLam));
   }
 
+  // ============================================================== chấm công
+
+  /// Bảng chấm công của **một ngày**.
+  ///
+  /// Trả về cả người chưa chấm (`present == null`) để màn hình phân biệt được
+  /// "hôm nay nghỉ" với "hôm nay chưa ai chấm" — hai chuyện khác nhau hoàn toàn
+  /// khi đối chiếu cuối mùa.
+  Map<String, Object?> daySheet(String crewId, DateTime date) {
+    _requireCrew(crewId);
+    final day = WagePhase.dateOnly(date);
+    final phase = _repo.phaseForDate(crewId, day);
+    final marked = {
+      for (final a in _repo.attendances(crewId: crewId, from: day, to: day)) a.workerId: a
+    };
+
+    final rows = <Map<String, Object?>>[];
+    final missingRate = <Map<String, Object?>>[];
+
+    for (final worker in _repo.workers(crewId)) {
+      final existing = marked[worker.id];
+      // Người đã chấm ngày đó thì luôn hiện, kể cả nay đã nghỉ hoặc mới vào
+      // sau — giấu đi thì mất dấu bản ghi đã có.
+      if (existing == null && !_worksOn(worker, day)) continue;
+
+      // Ngày đã chấm giữ nguyên mức lương lúc chấm; ngày chưa chấm mới tra
+      // bảng giá hiện tại. Sửa bảng giá không được làm đổi lương đã tính.
+      final amount = existing?.monthlyAmount ??
+          (phase == null
+              ? null
+              : _repo.monthlyAmountFor(
+                  crewId: crewId, phaseId: phase.id, worker: worker));
+
+      if (existing == null && amount == null) {
+        missingRate.add({'worker_id': worker.id, 'name': worker.name});
+      }
+
+      rows.add({
+        'worker_id': worker.id,
+        'name': worker.name,
+        'station_code': existing?.stationCode ?? worker.stationCode,
+        'band_id': worker.bandId,
+        'status': worker.status.value,
+        'attendance_id': existing?.id,
+        'present': existing?.present,
+        'monthly_amount': amount,
+        'days_in_month': existing?.daysInMonth ?? Attendance.daysInMonthOf(day),
+        'note': existing?.note,
+      });
+    }
+
+    return {
+      'date': timeToMillis(day),
+      'days_in_month': Attendance.daysInMonthOf(day),
+      'phase': phase?.toJson(),
+      'rows': rows,
+      'present_count': rows.where((r) => r['present'] == true).length,
+      'marked_count': rows.where((r) => r['present'] != null).length,
+      'missing_rate': missingRate,
+    };
+  }
+
+  /// Người này có nằm trong đoàn vào [day] hay không.
+  ///
+  /// Vào làm ngày 15 thì không được hiện ở ngày 3, và nghỉ từ ngày 20 thì
+  /// không được hiện ở ngày 25 — nếu không thì rất dễ chấm công cho người
+  /// chưa vào hoặc đã nghỉ.
+  static bool _worksOn(Worker worker, DateTime day) {
+    final join = worker.joinDate;
+    if (join != null && WagePhase.dateOnly(join).isAfter(day)) return false;
+    final leave = worker.leaveDate;
+    if (leave != null && WagePhase.dateOnly(leave).isBefore(day)) return false;
+    return worker.isWorking || leave != null;
+  }
+
+  /// Chấm công cho một ngày.
+  ///
+  /// [marks] là `{id nhân viên: có đi làm}`. Ghi cả người nghỉ (`false`) chứ
+  /// không chỉ người đi làm, để phân biệt với ngày chưa chấm.
+  Map<String, Object?> markDay({
+    required String crewId,
+    required DateTime date,
+    required Map<String, bool> marks,
+    String? note,
+    String? createdBy,
+  }) {
+    _requireCrew(crewId);
+    final day = WagePhase.dateOnly(date);
+
+    final phase = _repo.phaseForDate(crewId, day);
+    if (phase == null) {
+      throw BusinessException(
+        'Ngày ${_day(day)} chưa thuộc giai đoạn lương nào. Khai giai đoạn ở tab '
+        '"Cấu hình lương" trước đã, không thì không tra ra lương của ngày này.',
+      );
+    }
+
+    // Người chưa khai giá thì bỏ qua chứ không chặn cả ngày: một người mới vào
+    // chưa gán mức lương không được làm cả đoàn không chấm công được. Nhưng
+    // phải trả tên họ về để màn hình cảnh báo, kẻo mất công mà không ai biết.
+    final skipped = <Map<String, Object?>>[];
+
+    for (final entry in marks.entries) {
+      final worker = _repo.workerById(entry.key);
+      if (worker == null || worker.deleted) {
+        throw BusinessException('Không tìm thấy nhân viên trong danh sách chấm công.');
+      }
+      if (worker.crewId != crewId) {
+        throw BusinessException('Nhân viên "${worker.name}" không thuộc đoàn này.');
+      }
+
+      final existing = _repo.attendanceOn(worker.id, day);
+      if (existing != null) {
+        // Sửa lại ngày đã chấm thì giữ nguyên mức lương đã chốt lúc đó.
+        _repo.upsertAttendance(existing.copyWith(present: entry.value, note: note));
+        continue;
+      }
+
+      final amount = _repo.monthlyAmountFor(
+        crewId: crewId,
+        phaseId: phase.id,
+        worker: worker,
+      );
+      if (amount == null) {
+        skipped.add({
+          'worker_id': worker.id,
+          'name': worker.name,
+          'reason': worker.bandId == null
+              ? 'chưa gán mức lương'
+              : 'mức lương chưa khai giá cho giai đoạn "${phase.name}"',
+        });
+        continue;
+      }
+
+      _repo.upsertAttendance(Attendance.create(
+        crewId: crewId,
+        workerId: worker.id,
+        date: day,
+        present: entry.value,
+        phaseId: phase.id,
+        stationCode: worker.stationCode,
+        monthlyAmount: amount,
+        note: note,
+        createdBy: createdBy,
+      ));
+    }
+
+    return {
+      ...daySheet(crewId, day),
+      'skipped': skipped,
+    };
+  }
+
+  /// Bảng chấm công cả tháng: mỗi người một dòng, mỗi ngày một ô.
+  Map<String, Object?> monthSheet(String crewId, int year, int month) {
+    _requireCrew(crewId);
+    if (month < 1 || month > 12) {
+      throw BusinessException('Tháng phải từ 1 tới 12.');
+    }
+
+    final first = DateTime(year, month, 1);
+    final days = Attendance.daysInMonthOf(first);
+    final last = DateTime(year, month, days);
+    final all = _repo.attendances(crewId: crewId, from: first, to: last);
+    final bandNames = {for (final b in _repo.bands(crewId)) b.id: b.name};
+
+    final rows = <Map<String, Object?>>[];
+    var totalDays = 0;
+    var totalWage = 0.0;
+
+    for (final worker in _repo.workers(crewId)) {
+      final mine = all.where((a) => a.workerId == worker.id).toList();
+      // Người không có ngày nào trong tháng và cũng không thuộc đoàn tháng đó
+      // thì không cần chiếm một dòng.
+      if (mine.isEmpty && !_worksOn(worker, first) && !_worksOn(worker, last)) {
+        continue;
+      }
+
+      final present = mine.where((a) => a.present).map((a) => a.date.day).toList()..sort();
+      final absent = mine.where((a) => !a.present).map((a) => a.date.day).toList()..sort();
+      final wage = PayrollCalculator.wageEarnedInMonth(mine);
+
+      totalDays += present.length;
+      totalWage += wage;
+
+      rows.add({
+        'worker_id': worker.id,
+        'name': worker.name,
+        'station_code': worker.stationCode,
+        'band_name': worker.bandId == null ? null : bandNames[worker.bandId],
+        'status': worker.status.value,
+        'present_days': present,
+        'absent_days': absent,
+        'days_worked': present.length,
+        'wage_earned': wage,
+      });
+    }
+
+    return {
+      'year': year,
+      'month': month,
+      'days_in_month': days,
+      'rows': rows,
+      'total_days_worked': totalDays,
+      'total_wage': PayrollCalculator.roundMoney(totalWage),
+    };
+  }
+
+  /// Tính lại mức lương đã chốt của một tháng theo bảng giá hiện tại.
+  ///
+  /// Bình thường ngày đã chấm giữ nguyên mức lương lúc chấm. Hàm này là cái nút
+  /// riêng để cố ý tính lại quá khứ — ví dụ khai sai giá rồi mới phát hiện.
+  /// Trả về đúng những ngày thực sự đổi số, để biết mình vừa sửa cái gì.
+  Map<String, Object?> recalcMonth({
+    required String crewId,
+    required int year,
+    required int month,
+  }) {
+    _requireCrew(crewId);
+    if (month < 1 || month > 12) {
+      throw BusinessException('Tháng phải từ 1 tới 12.');
+    }
+
+    final first = DateTime(year, month, 1);
+    final last = DateTime(year, month, Attendance.daysInMonthOf(first));
+    final workers = {for (final w in _repo.workers(crewId)) w.id: w};
+
+    final changed = <Map<String, Object?>>[];
+    for (final record in _repo.attendances(crewId: crewId, from: first, to: last)) {
+      final worker = workers[record.workerId];
+      final phase = _repo.phaseForDate(crewId, record.date);
+      if (worker == null || phase == null) continue;
+
+      final amount = _repo.monthlyAmountFor(
+        crewId: crewId,
+        phaseId: phase.id,
+        worker: worker,
+      );
+      if (amount == null || amount == record.monthlyAmount) continue;
+
+      _repo.upsertAttendance(record.copyWith(monthlyAmount: amount, phaseId: phase.id));
+      changed.add({
+        'worker_id': worker.id,
+        'name': worker.name,
+        'date': timeToMillis(record.date),
+        'from': record.monthlyAmount,
+        'to': amount,
+      });
+    }
+
+    return {'changed': changed, 'count': changed.length};
+  }
+
   /// Bảng giá đầy đủ của một đoàn, dựng sẵn cho màn hình cấu hình.
   Map<String, Object?> wageTable(String crewId) {
     _requireCrew(crewId);
