@@ -33,3 +33,14 @@ flutter:
   assets:
     - assets/fonts/Roboto-Regular.ttf
     - assets/fonts/Roboto-Bold.ttf
+
+  # Roboto Condensed dùng riêng cho các con số: số cân, tiền, cột số trong bảng.
+  # Chữ hẹp nên bảng 31 cột ngày vẫn đọc được, và số cân nhìn ra dáng mặt đồng
+  # hồ đo chứ không lẫn vào chữ thường. Nhúng sẵn vì máy ở kho phải chạy được
+  # khi mất mạng — không tải font từ Internet.
+  fonts:
+    - family: RobotoCondensed
+      fonts:
+        - asset: assets/fonts/RobotoCondensed-Regular.ttf
+        - asset: assets/fonts/RobotoCondensed-Bold.ttf
+          weight: 700

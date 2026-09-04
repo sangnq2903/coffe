@@ -312,35 +312,51 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
     };
   }
 
+  /// Thanh chọn ngày.
+  ///
+  /// Hai mũi tên nằm sát ngày chứ không dạt ra hai mép màn hình: đổi ngày là
+  /// việc làm liên tục, để xa nhau thì mỗi lần bấm phải rê chuột cả gang tay.
   Widget _dayBar() {
     final laHomNay = _sameDay(_day, DateTime.now());
     final phase = _sheet?.phase;
+
     return Padding(
-      padding: const EdgeInsets.all(AppTheme.gapMd),
+      padding: const EdgeInsets.fromLTRB(
+          AppTheme.gapMd, AppTheme.gapMd, AppTheme.gapMd, AppTheme.gapSm),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          IconButton(
+          _StepButton(
             tooltip: 'Ngày trước',
-            icon: const Icon(Icons.chevron_left),
-            onPressed: () => _goto(_day.subtract(const Duration(days: 1))),
+            icon: Icons.chevron_left,
+            onTap: () => _goto(_day.subtract(const Duration(days: 1))),
           ),
-          Expanded(
+          const SizedBox(width: 6),
+          Flexible(
             child: InkWell(
               onTap: _pickDay,
-              borderRadius: BorderRadius.circular(AppTheme.radius),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 210),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  border: Border.all(color: AppTheme.lineStrong),
+                ),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       '${_weekday(_day)}, ${formatDate(_day)}',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                     ),
-                    const SizedBox(height: 2),
                     Text(
-                      phase == null ? 'chưa khai giai đoạn lương' : 'Giai đoạn: ${phase.name}',
+                      phase == null
+                          ? 'chưa khai giai đoạn lương'
+                          : 'Giai đoạn: ${phase.name}',
                       style: TextStyle(
-                        fontSize: 12.5,
+                        fontSize: 12,
                         color: phase == null ? AppTheme.offline : AppTheme.textMuted,
                       ),
                     ),
@@ -349,16 +365,19 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
               ),
             ),
           ),
-          IconButton(
+          const SizedBox(width: 6),
+          _StepButton(
             tooltip: 'Ngày sau',
-            icon: const Icon(Icons.chevron_right),
-            onPressed: () => _goto(_day.add(const Duration(days: 1))),
+            icon: Icons.chevron_right,
+            onTap: () => _goto(_day.add(const Duration(days: 1))),
           ),
-          if (!laHomNay)
-            TextButton(
+          if (!laHomNay) ...[
+            const SizedBox(width: AppTheme.gapSm),
+            OutlinedButton(
               onPressed: () => _goto(DateTime.now()),
               child: const Text('Hôm nay'),
             ),
+          ],
         ],
       ),
     );
@@ -386,101 +405,72 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
     );
   }
 
+  /// Một người trong bảng ngày.
+  ///
+  /// Hai nút "Đi làm" / "Nghỉ" dính liền thành một cặp, cao [AppTheme.minTouch]
+  /// và có chữ hẳn hoi. Trước đây là ba ô vuông 36px không nhãn nằm sát mép
+  /// phải màn hình — bấm nhầm liên tục, và phải rê chuột từ tên người sang tận
+  /// bên kia màn hình.
   Widget _row(DayRow row, bool canMark) {
     final tienNgay = row.dailyAmount;
     final thieuGio = row.present == true && row.hoursOff > 0;
-    return ListTile(
-      title: Text(row.name),
-      subtitle: Text(
-        [
-          row.stationCode == null ? 'chưa gán kho' : 'Kho ${row.stationCode}',
-          if (tienNgay != null) '${formatMoney(tienNgay)} đ/ngày' else 'chưa tra ra lương',
-          if (thieuGio)
-            'nghỉ ${formatDecimal(row.hoursOff)} giờ → còn '
-                '${formatDecimal(row.hoursWorked)}/${formatDecimal(row.standardHours)} giờ, '
-                'công ${formatDecimal(row.workUnit)}',
-        ].join(' • '),
-        style: thieuGio
-            ? const TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w600)
-            : null,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
+    final nghi = row.present == false;
+
+    return Container(
+      // Người nghỉ được tô nền nhạt: lướt mắt xuống là thấy ngay hôm nay vắng
+      // những ai, không phải đọc từng dòng.
+      color: nghi ? AppTheme.offline.withValues(alpha: 0.035) : null,
+      padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+      child: Row(
         children: [
-          Tooltip(
-            message: thieuGio ? 'Sửa giờ nghỉ' : 'Nghỉ vài giờ trong ngày',
-            child: InkWell(
-              onTap: canMark && row.present == true ? () => _editHours(row) : null,
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                width: 40,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: thieuGio ? AppTheme.accent.withValues(alpha: 0.16) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: thieuGio ? AppTheme.accent.withValues(alpha: 0.55) : AppTheme.line,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(row.name, style: AppTheme.body),
+                const SizedBox(height: 2),
+                Text(
+                  [
+                    if (row.stationCode != null) row.stationCode!,
+                    if (tienNgay != null)
+                      '${formatMoney(tienNgay)} đ/ngày'
+                    else
+                      'chưa tra ra lương',
+                  ].join('  ·  '),
+                  style: AppTheme.meta,
+                ),
+                if (thieuGio) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    'Nghỉ ${formatDecimal(row.hoursOff)} giờ → làm '
+                    '${formatDecimal(row.hoursWorked)}/${formatDecimal(row.standardHours)} giờ'
+                    '  ·  ${formatDecimal(row.workUnit)} công',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.accent,
+                    ),
                   ),
-                ),
-                child: Icon(
-                  Icons.more_time,
-                  size: 20,
-                  color: thieuGio
-                      ? AppTheme.accent
-                      : (row.present == true ? AppTheme.textMuted : AppTheme.line),
-                ),
-              ),
+                ],
+              ],
             ),
           ),
-          const SizedBox(width: 4),
-          _markButton(
-            row: row,
-            value: true,
-            icon: Icons.check,
-            color: AppTheme.stable,
-            tooltip: 'Đi làm',
+          const SizedBox(width: AppTheme.gapSm),
+          if (canMark && row.present == true) ...[
+            _HoursButton(
+              active: thieuGio,
+              hoursOff: row.hoursOff,
+              onTap: () => _editHours(row),
+            ),
+            const SizedBox(width: 6),
+          ],
+          _StateToggle(
+            present: row.present,
             enabled: canMark,
-          ),
-          const SizedBox(width: 4),
-          _markButton(
-            row: row,
-            value: false,
-            icon: Icons.close,
-            color: AppTheme.offline,
-            tooltip: 'Nghỉ',
-            enabled: canMark,
+            onChanged: (v) => _mark({row.workerId: v}),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _markButton({
-    required DayRow row,
-    required bool value,
-    required IconData icon,
-    required Color color,
-    required String tooltip,
-    required bool enabled,
-  }) {
-    final chosen = row.present == value;
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: enabled ? () => _mark({row.workerId: value}) : null,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          width: 40,
-          height: 36,
-          decoration: BoxDecoration(
-            color: chosen ? color.withValues(alpha: 0.16) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: chosen ? color.withValues(alpha: 0.55) : AppTheme.line,
-            ),
-          ),
-          child: Icon(icon, size: 20, color: chosen ? color : AppTheme.line),
-        ),
       ),
     );
   }
@@ -507,24 +497,7 @@ class _AttendanceDayTabState extends State<AttendanceDayTab> {
   }) =>
       Padding(
         padding: const EdgeInsets.only(bottom: AppTheme.gapMd),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(AppTheme.radius),
-            border: Border.all(color: color.withValues(alpha: 0.4)),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, size: 20, color: color),
-              const SizedBox(width: AppTheme.gapSm),
-              Expanded(
-                child: Text(text, style: const TextStyle(fontSize: 13)),
-              ),
-            ],
-          ),
-        ),
+        child: NoticeBar(icon: icon, color: color, text: text),
       );
 
   Future<void> _pickDay() async {
@@ -613,23 +586,26 @@ class _AttendanceMonthTabState extends State<AttendanceMonthTab> {
           padding: const EdgeInsets.all(AppTheme.gapMd),
           child: Row(
             children: [
-              IconButton(
+              const Spacer(),
+              _StepButton(
                 tooltip: 'Tháng trước',
-                icon: const Icon(Icons.chevron_left),
-                onPressed: () => _shift(-1),
+                icon: Icons.chevron_left,
+                onTap: () => _shift(-1),
               ),
-              Expanded(
+              Container(
+                constraints: const BoxConstraints(minWidth: 150),
+                alignment: Alignment.center,
                 child: Text(
                   'Tháng ${_month.month}/${_month.year}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                 ),
               ),
-              IconButton(
+              _StepButton(
                 tooltip: 'Tháng sau',
-                icon: const Icon(Icons.chevron_right),
-                onPressed: () => _shift(1),
+                icon: Icons.chevron_right,
+                onTap: () => _shift(1),
               ),
+              const Spacer(),
               IconButton(
                 tooltip: 'Tính lại lương của tháng này',
                 icon: const Icon(Icons.calculate_outlined),
@@ -802,6 +778,176 @@ class _AttendanceMonthTabState extends State<AttendanceMonthTab> {
       if (mounted) setState(() => _error = e.message);
     }
   }
+}
+
+/// Nút mũi tên lùi/tới một bước, cỡ chạm được bằng ngón cái.
+class _StepButton extends StatelessWidget {
+  const _StepButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: tooltip,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          child: Container(
+            width: AppTheme.minTouch,
+            height: AppTheme.minTouch,
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              border: Border.all(color: AppTheme.lineStrong),
+            ),
+            child: Icon(icon, size: 22, color: AppTheme.textSoft),
+          ),
+        ),
+      );
+}
+
+/// Cặp nút "Đi làm" / "Nghỉ" dính liền nhau.
+///
+/// Có nhãn chữ chứ không chỉ dấu ✓ ✕: người mới dùng không phải đoán, và ô bấm
+/// rộng hơn hẳn nên chấm cả đoàn không bị trượt tay. Màn hình hẹp thì bỏ chữ,
+/// giữ nguyên bề cao chạm được.
+class _StateToggle extends StatelessWidget {
+  const _StateToggle({
+    required this.present,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  /// `null` là chưa chấm — khi đó không nút nào sáng.
+  final bool? present;
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, _) {
+          final rong = MediaQuery.sizeOf(context).width >= 560;
+          return Container(
+            height: AppTheme.minTouch,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              border: Border.all(color: AppTheme.lineStrong),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _half(
+                  value: true,
+                  icon: Icons.check,
+                  label: 'Đi làm',
+                  color: AppTheme.stable,
+                  showLabel: rong,
+                ),
+                const VerticalDivider(width: 1),
+                _half(
+                  value: false,
+                  icon: Icons.close,
+                  label: 'Nghỉ',
+                  color: AppTheme.offline,
+                  showLabel: rong,
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+  Widget _half({
+    required bool value,
+    required IconData icon,
+    required String label,
+    required Color color,
+    required bool showLabel,
+  }) {
+    final chosen = present == value;
+    return InkWell(
+      onTap: enabled ? () => onChanged(value) : null,
+      child: Container(
+        constraints: BoxConstraints(minWidth: showLabel ? 84 : 46),
+        padding: EdgeInsets.symmetric(horizontal: showLabel ? 12 : 0),
+        color: chosen ? color.withValues(alpha: 0.14) : AppTheme.surface,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: chosen ? color : AppTheme.textMuted),
+            if (showLabel) ...[
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: chosen ? FontWeight.w700 : FontWeight.w600,
+                  color: chosen ? color : AppTheme.textSoft,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Nút ghi giờ nghỉ. Hiện luôn số giờ đã ghi để khỏi phải mở ra xem.
+class _HoursButton extends StatelessWidget {
+  const _HoursButton({
+    required this.active,
+    required this.hoursOff,
+    required this.onTap,
+  });
+
+  final bool active;
+  final double hoursOff;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: active ? 'Sửa giờ nghỉ' : 'Nghỉ vài giờ trong ngày',
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          child: Container(
+            height: AppTheme.minTouch,
+            constraints: const BoxConstraints(minWidth: AppTheme.minTouch),
+            padding: EdgeInsets.symmetric(horizontal: active ? 10 : 0),
+            decoration: BoxDecoration(
+              color: active ? AppTheme.accentSoft : AppTheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              border: Border.all(
+                color: active ? AppTheme.accent.withValues(alpha: 0.5) : AppTheme.lineStrong,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.more_time,
+                    size: 19, color: active ? AppTheme.accent : AppTheme.textMuted),
+                if (active) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    formatDecimal(hoursOff),
+                    style: AppTheme.number(13, color: AppTheme.accent),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
 }
 
 /// Nhập số giờ nghỉ trong ngày.

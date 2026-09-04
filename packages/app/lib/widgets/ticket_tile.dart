@@ -39,61 +39,60 @@ class TicketTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
         child: Row(
           children: [
+            // Vạch màu mảnh thay cho ô vuông có nền: trạng thái vẫn nhận ra
+            // ngay mà không chiếm chỗ của nội dung.
             Container(
-              width: 38,
-              height: 38,
+              width: 3,
+              height: 40,
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                ticket.direction == WeighDirection.nhap
-                    ? Icons.south_west
-                    : Icons.north_east,
                 color: color,
-                size: 19,
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(width: AppTheme.gapMd),
+            const SizedBox(width: 12),
+            Icon(
+              ticket.direction == WeighDirection.nhap ? Icons.south_west : Icons.north_east,
+              color: color,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          ticket.plateNo,
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: AppTheme.gapSm),
-                      Text(
-                        ticket.ticketNo,
-                        style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
-                      ),
-                    ],
+                  // Cấp 1: biển số — thứ người ta tìm khi lướt danh sách.
+                  Text(
+                    ticket.plateNo,
+                    style: AppTheme.number(16, weight: FontWeight.w700),
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
+                  // Cấp 2: hàng và khách — đọc khi đã dừng lại ở dòng này.
                   Text(
                     [
                       ticket.goodsName.isEmpty ? '—' : ticket.goodsName,
                       ticket.customerName.isEmpty ? '—' : ticket.customerName,
                       if (showStation) ticket.stationCode,
-                    ].join(' • '),
-                    style: const TextStyle(fontSize: 12.5, color: AppTheme.textMuted),
+                    ].join('  ·  '),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.textSoft,
+                      fontWeight: FontWeight.w500,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 3),
+                  // Cấp 3: số phiếu, hai lần cân, giờ — chỉ cần khi đối chiếu.
                   Text(
-                    'L1 ${formatWeight(ticket.firstWeight)}'
-                    '  →  L2 ${ticket.secondWeight == null ? "chờ cân" : formatWeight(ticket.secondWeight)}'
-                    '   •   ${formatDateTime(ticket.createdAt)}',
-                    style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                    '${ticket.ticketNo}  ·  '
+                    '${formatWeight(ticket.firstWeight)} → '
+                    '${ticket.secondWeight == null ? "chờ cân" : formatWeight(ticket.secondWeight)}'
+                    '  ·  ${formatDateTime(ticket.createdAt)}',
+                    style: AppTheme.meta.copyWith(fontSize: 11.5),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -102,29 +101,39 @@ class TicketTile extends StatelessWidget {
             const SizedBox(width: AppTheme.gapSm),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  done ? '${formatWeight(ticket.netWeight)} kg' : '—',
-                  style: AppTheme.digits(18, color: color),
-                ),
-                const SizedBox(height: 2),
-                if (done)
-                  Text(
-                    'TP ${formatWeight(ticket.productWeight)} kg',
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                  )
-                else
+                if (done) ...[
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(formatWeight(ticket.netWeight),
+                          style: AppTheme.number(19, color: AppTheme.text)),
+                      const SizedBox(width: 3),
+                      const Text('kg',
+                          style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textMuted)),
+                    ],
+                  ),
+                  const SizedBox(height: 1),
+                  Text('TP ${formatWeight(ticket.productWeight)} kg',
+                      style: AppTheme.meta.copyWith(fontSize: 11)),
+                ] else
                   StatusPill(label: ticket.status.label, color: color, compact: true),
               ],
             ),
-            if (onPrint != null && done) ...[
-              const SizedBox(width: AppTheme.gapXs),
+            if (onPrint != null && done)
               IconButton(
                 tooltip: 'In phiếu cân',
-                icon: const Icon(Icons.print_outlined),
+                icon: const Icon(Icons.print_outlined, size: 20),
                 onPressed: onPrint,
-              ),
-            ],
+              )
+            else
+              const SizedBox(width: AppTheme.gapSm),
           ],
         ),
       ),

@@ -197,24 +197,34 @@ class _TicketsScreenState extends State<TicketsScreen> {
         ),
         const SizedBox(height: AppTheme.gapMd),
 
+        // Ba ô cùng một kiểu. Trước đây ô giữa tô nền đặc màu chủ đạo, nhìn như
+        // đang nhấn mạnh ngẫu nhiên trong khi cả ba đều là số tổng ngang nhau.
         Row(
           children: [
-            Expanded(child: _summaryTile('Số phiếu', '${_tickets.length}', Icons.receipt_long)),
-            const SizedBox(width: AppTheme.gapSm),
             Expanded(
-              child: _summaryTile(
-                'Tổng KL hàng',
-                '${formatWeight(totalNet)} kg',
-                Icons.scale,
-                highlight: true,
+              child: StatTile(
+                label: 'Số phiếu',
+                value: '${_tickets.length}',
+                icon: Icons.receipt_long,
               ),
             ),
             const SizedBox(width: AppTheme.gapSm),
             Expanded(
-              child: _summaryTile(
-                'Tổng KL thành phẩm',
-                '${formatWeight(totalProduct)} kg',
-                Icons.inventory_2,
+              child: StatTile(
+                label: 'Tổng KL hàng',
+                value: formatWeight(totalNet),
+                unit: 'kg',
+                icon: Icons.scale,
+                tone: AppTheme.primary,
+              ),
+            ),
+            const SizedBox(width: AppTheme.gapSm),
+            Expanded(
+              child: StatTile(
+                label: 'Tổng KL thành phẩm',
+                value: formatWeight(totalProduct),
+                unit: 'kg',
+                icon: Icons.inventory_2,
               ),
             ),
           ],
@@ -259,45 +269,4 @@ class _TicketsScreenState extends State<TicketsScreen> {
     );
   }
 
-  Widget _summaryTile(String label, String value, IconData icon, {bool highlight = false}) =>
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: highlight ? AppTheme.primary : AppTheme.surface,
-          borderRadius: BorderRadius.circular(AppTheme.radius),
-          border: Border.all(color: highlight ? AppTheme.primary : AppTheme.line),
-          boxShadow: AppTheme.softShadow,
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 22, color: highlight ? Colors.white70 : AppTheme.textMuted),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: AppTheme.sectionLabel.copyWith(
-                      color: highlight ? Colors.white70 : AppTheme.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      value,
-                      style: AppTheme.digits(
-                        21,
-                        color: highlight ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
 }

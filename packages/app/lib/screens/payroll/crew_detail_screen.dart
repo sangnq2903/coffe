@@ -129,15 +129,18 @@ class _CrewDetailScreenState extends State<CrewDetailScreen> {
                 child: Text(_error!, style: const TextStyle(color: AppTheme.offline)),
               ),
             Expanded(
-              child: TabBarView(
-                children: [
-                  AttendanceDayTab(crewId: widget.crew.id),
-                  AttendanceMonthTab(crewId: widget.crew.id),
+              child: PageBody(
+                padding: EdgeInsets.zero,
+                child: TabBarView(
+                  children: [
+                    AttendanceDayTab(crewId: widget.crew.id),
+                    AttendanceMonthTab(crewId: widget.crew.id),
                   MoneyTab(crew: _crew),
                   ReportTab(crew: _crew, onCrewChanged: _reloadCrew),
-                  _workersTab(),
-                  _configTab(),
-                ],
+                    _workersTab(),
+                    _configTab(),
+                  ],
+                ),
               ),
             ),
           ],

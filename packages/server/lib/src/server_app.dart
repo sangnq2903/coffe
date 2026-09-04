@@ -157,13 +157,21 @@ class ServerApp {
     'expires': '0',
   };
 
-  /// Cấm trình duyệt cache mấy file khởi động của bản web.
+  /// Buộc trình duyệt hỏi lại máy chủ trước khi dùng bản đã tải về.
   ///
-  /// Flutter web cài service worker cache rất dai: sau khi cập nhật phần mềm,
-  /// máy ở kho vẫn chạy bản cũ cho tới khi ai đó biết cách xoá cache — và triệu
-  /// chứng thì mơ hồ (số cân không lên) nên rất khó đoán ra. Bắt buộc trình
-  /// duyệt hỏi lại mấy file này mỗi lần mở là hết. Các file còn lại (main.dart.js,
-  /// font, ảnh) đều có tên kèm phiên bản nên vẫn cache bình thường.
+  /// Sau khi cập nhật phần mềm, máy ở kho vẫn chạy bản cũ cho tới khi ai đó
+  /// biết cách xoá cache — triệu chứng thì mơ hồ (thiếu một nút, một màn hình
+  /// trống) nên rất khó đoán ra.
+  ///
+  /// Không file nào của Flutter web có tên kèm phiên bản: `main.dart.js` cập
+  /// nhật xong vẫn nguyên tên, nên chỉ cấm cache mấy file khởi động là chưa đủ
+  /// — `flutter_bootstrap.js` được tải mới nhưng nó lại trỏ về `main.dart.js`
+  /// cũ trong cache. Vì vậy cấm cache **mọi file**.
+  ///
+  /// Phân biệt hai mức: file khởi động dùng `no-store` (tải lại hẳn, tuyệt đối
+  /// không được cũ), phần còn lại dùng `no-cache` — vẫn giữ trong máy nhưng
+  /// phải hỏi lại; file không đổi thì máy chủ trả 304 nên gần như không tốn
+  /// băng thông, hợp với đường Tailscale trong mạng nội bộ.
   Response _noCacheForEntryPoints(Request request, Response response) {
     const entryPoints = {
       '',
@@ -172,8 +180,11 @@ class ServerApp {
       'flutter_service_worker.js',
       'version.json',
     };
-    if (!entryPoints.contains(request.url.path)) return response;
-    return response.change(headers: _noCacheHeaders);
+    return response.change(
+      headers: entryPoints.contains(request.url.path)
+          ? _noCacheHeaders
+          : const {'cache-control': 'no-cache'},
+    );
   }
 
   void _logRequest(String message, bool isError) {

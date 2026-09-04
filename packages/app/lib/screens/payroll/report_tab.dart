@@ -21,6 +21,20 @@ enum _ReportKind {
 ///
 /// Bảng lương là thứ đưa cho người ta xem rồi ký nhận, nên in được ra giấy —
 /// xem trên màn hình thôi thì chưa dùng được.
+
+/// Bề rộng tối thiểu của bảng nhiều cột.
+///
+/// Trừ đi thanh điều hướng và lề trang rồi lấy phần còn lại, để bảng trải hết
+/// khung nội dung thay vì co lại bằng bề rộng chữ và bỏ trống nửa màn hình.
+/// Vẫn cho cuộn ngang khi màn hình hẹp hơn nội dung.
+double _tableMinWidth(BuildContext context) {
+  final w = MediaQuery.sizeOf(context).width;
+  final conNguon = w >= AppTheme.wideBreakpoint ? w - 96 - 1 : w;
+  final trongKhung = conNguon.clamp(0.0, AppTheme.contentMaxWidth);
+  // Trừ lề trang hai bên và viền thẻ.
+  return (trongKhung - AppTheme.gapMd * 2 - 2).clamp(320.0, double.infinity);
+}
+
 class ReportTab extends StatefulWidget {
   const ReportTab({super.key, required this.crew, this.onCrewChanged});
 
@@ -186,7 +200,11 @@ class _ReportTabState extends State<ReportTab> {
           child: SingleChildScrollView(
             // Bảng lương nhiều cột chắc chắn rộng hơn màn hình.
             scrollDirection: Axis.horizontal,
-            child: DataTable(
+            // Bảng tự co lại bằng bề rộng nội dung; ép tối thiểu bằng
+            // bề rộng trang để nửa màn hình bên phải không bỏ trống.
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: _tableMinWidth(context)),
+              child: DataTable(
               columnSpacing: 18,
               horizontalMargin: 12,
               headingRowHeight: 40,
@@ -235,7 +253,7 @@ class _ReportTabState extends State<ReportTab> {
                   ],
                 ),
               ],
-            ),
+            )),
           ),
         ),
         if (report.byStation.isNotEmpty) ...[
@@ -275,7 +293,11 @@ class _ReportTabState extends State<ReportTab> {
           ),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: DataTable(
+            // Bảng tự co lại bằng bề rộng nội dung; ép tối thiểu bằng
+            // bề rộng trang để nửa màn hình bên phải không bỏ trống.
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: _tableMinWidth(context)),
+              child: DataTable(
               columnSpacing: 18,
               horizontalMargin: 12,
               headingRowHeight: 40,
@@ -322,7 +344,7 @@ class _ReportTabState extends State<ReportTab> {
                   ],
                 ),
               ],
-            ),
+            )),
           ),
         ),
         if (report.byStation.isNotEmpty) ...[
