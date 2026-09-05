@@ -231,6 +231,108 @@ void main() {
     });
   });
 
+  group('Định mức chi phí khi bán', () {
+    setUp(() async {
+      await dungMayChu(ServerRole.central);
+      // Trấu: mua 1.500 + điện 2.500 + xe 1.700 + công 1.500 = 7.200 đ/kg.
+      await post('/api/goods-types', {
+        'id': idCaNhan,
+        'name': 'Trấu',
+        'default_yield_ratio': 100,
+        'cost_items': [
+          {'name': 'Mua trấu', 'per_kg': 1500},
+          {'name': 'Tiền điện', 'per_kg': 2500},
+          {'name': 'Tiền xe', 'per_kg': 1700},
+          {'name': 'Công', 'per_kg': 1500},
+        ],
+      });
+    });
+
+    test('bán ra tự chép định mức và tính ra lãi', () async {
+      final gd = await post('/api/giao-dich', {
+        'date': ngay(2026, 9, 5),
+        'kind': 'ban_ra',
+        'goods_type_id': idCaNhan,
+        'quantity': 10000,
+        'unit_price': 8000,
+        'amount': 80000000,
+      });
+
+      final t = Trade.fromJson(gd);
+      expect(t.costPerKg, 7200, reason: '1.500 + 2.500 + 1.700 + 1.500');
+      expect(t.totalCost, 72000000);
+      expect(t.profit, 8000000, reason: '80 triệu thu về trừ 72 triệu chi phí');
+      expect(t.costItems.length, 4);
+      expect(t.costItems.first.name, 'Mua trấu');
+    });
+
+    test('mua vào thì không gắn chi phí, lãi để trống', () async {
+      final gd = await post('/api/giao-dich', {
+        'date': ngay(2026, 9, 5),
+        'kind': 'mua_vao',
+        'goods_type_id': idCaNhan,
+        'quantity': 10000,
+        'amount': 15000000,
+      });
+      final t = Trade.fromJson(gd);
+      expect(t.costItems, isEmpty);
+      expect(t.profit, isNull, reason: 'mua vào thì chưa có gì để so');
+    });
+
+    test('sửa định mức không làm đổi lãi của lần bán cũ', () async {
+      final cu = Trade.fromJson(await post('/api/giao-dich', {
+        'date': ngay(2026, 9, 5),
+        'kind': 'ban_ra',
+        'goods_type_id': idCaNhan,
+        'quantity': 10000,
+        'amount': 80000000,
+      }));
+      expect(cu.profit, 8000000);
+
+      // Điện tăng gấp đôi.
+      await post('/api/goods-types', {
+        'id': idCaNhan,
+        'name': 'Trấu',
+        'cost_items': [
+          {'name': 'Mua trấu', 'per_kg': 1500},
+          {'name': 'Tiền điện', 'per_kg': 5000},
+        ],
+      });
+
+      final doc = Trade.fromJson(
+          ((await soMuaBan())['items'] as List).first as Map<String, Object?>);
+      expect(doc.costPerKg, 7200, reason: 'bảng chi phí đã chép, không tra lại');
+      expect(doc.profit, 8000000);
+    });
+
+    test('gửi kèm bảng chi phí riêng thì dùng bảng đó', () async {
+      // Chuyến này thuê xe xa hơn nên chi phí khác định mức.
+      final gd = await post('/api/giao-dich', {
+        'date': ngay(2026, 9, 6),
+        'kind': 'ban_ra',
+        'goods_type_id': idCaNhan,
+        'quantity': 1000,
+        'amount': 8000000,
+        'cost_items': [
+          {'name': 'Mua trấu', 'per_kg': 1500},
+          {'name': 'Tiền xe đường xa', 'per_kg': 3000},
+        ],
+      });
+      final t = Trade.fromJson(gd);
+      expect(t.costPerKg, 4500);
+      expect(t.profit, 8000000 - 4500000);
+    });
+
+    test('khoản chi âm thì bị từ chối', () async {
+      await post('/api/goods-types', {
+        'name': 'Hàng lỗi',
+        'cost_items': [
+          {'name': 'Sai', 'per_kg': -100},
+        ],
+      }, expectStatus: 400);
+    });
+  });
+
   group('Số tổng và bộ lọc', () {
     setUp(() async {
       await dungMayChu(ServerRole.central);
@@ -369,6 +471,23 @@ void main() {
 
       expect(tq.firstDate!.day, 5);
       expect(tq.lastDate!.month, 10);
+    });
+
+    test('mua gõ tay và bán chọn danh mục vẫn là một dòng', () async {
+      // Cùng một mặt hàng mà tách hai dòng thì tồn ra số âm vô lý.
+      await post('/api/giao-dich', {
+        'date': ngay(2026, 9, 12),
+        'kind': 'mua_vao',
+        'goods_name': 'cà nhân',
+        'quantity': 500,
+        'amount': 50000000,
+      });
+      final tq = TradeStock.fromJson(
+          (await body(await call('GET', '/api/giao-dich/tong-quan', token: tokenChu)))
+              as Map<String, Object?>);
+      final ca = tq.lines.where((e) => e.goodsName.toLowerCase().contains('cà nhân'));
+      expect(ca.length, 1, reason: 'gõ tay và chọn danh mục phải gộp làm một');
+      expect(ca.single.quantityIn, 10500);
     });
 
     test('mặt hàng gõ tay gộp theo tên bỏ dấu', () async {

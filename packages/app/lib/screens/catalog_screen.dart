@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/formatters.dart';
+import '../core/theme.dart';
 import '../state/server_connection.dart';
 
 /// Danh mục dùng chung: khách hàng, xe và loại hàng.
@@ -408,6 +409,103 @@ class _GoodsDialogState extends State<_GoodsDialog> {
       text: formatDecimal(widget.goods?.defaultYieldRatio ?? 100));
   final _formKey = GlobalKey<FormState>();
 
+  /// Định mức chi phí đ/kg, sửa ngay trong hộp thoại này.
+  late final List<CostItem> _chiPhi = [...?widget.goods?.costItems];
+
+  /// Bảng khai định mức chi phí để ra được một ký hàng này.
+  ///
+  /// Mỗi lần **bán** loại hàng này, bảng được chép sang giao dịch để tính lãi
+  /// thật. Sửa ở đây chỉ ảnh hưởng những lần bán sau.
+  Widget _bangChiPhi() {
+    final tong = CostItem.perKgTotal(_chiPhi);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text('Chi phí để ra 1 kg',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            ),
+            TextButton.icon(
+              onPressed: () => setState(
+                  () => _chiPhi.add(const CostItem(name: '', perKg: 0))),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Thêm khoản'),
+            ),
+          ],
+        ),
+        const Text(
+          'Tiền mua nguyên liệu, tiền điện, tiền xe, công… Bán hàng này thì máy '
+          'lấy tổng dưới đây nhân khối lượng ra chi phí và tính lãi.',
+          style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted, height: 1.35),
+        ),
+        const SizedBox(height: AppTheme.gapSm),
+        if (_chiPhi.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Text('Chưa khai khoản nào — bán loại hàng này sẽ không tính lãi.',
+                style: TextStyle(fontSize: 12.5, color: AppTheme.textMuted)),
+          )
+        else
+          for (var i = 0; i < _chiPhi.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextFormField(
+                      initialValue: _chiPhi[i].name,
+                      decoration: const InputDecoration(
+                          labelText: 'Khoản chi', isDense: true),
+                      onChanged: (v) => _chiPhi[i] = _chiPhi[i].copyWith(name: v),
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.gapSm),
+                  Expanded(
+                    flex: 2,
+                    child: TextFormField(
+                      initialValue:
+                          _chiPhi[i].perKg == 0 ? '' : formatDecimal(_chiPhi[i].perKg),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration:
+                          const InputDecoration(suffixText: 'đ/kg', isDense: true),
+                      onChanged: (v) => setState(() =>
+                          _chiPhi[i] = _chiPhi[i].copyWith(perKg: parseNumber(v) ?? 0)),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Bỏ khoản này',
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => setState(() => _chiPhi.removeAt(i)),
+                  ),
+                ],
+              ),
+            ),
+        if (_chiPhi.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.primarySoft,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text('Tổng chi phí',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                ),
+                Text('${formatMoney(tong)} đ/kg',
+                    style: AppTheme.number(16, color: AppTheme.primary)),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) => AlertDialog(
         title: Text(widget.goods == null ? 'Thêm loại hàng' : 'Sửa loại hàng'),
@@ -446,6 +544,8 @@ class _GoodsDialogState extends State<_GoodsDialog> {
                     return null;
                   },
                 ),
+                const Divider(height: 28),
+                _bangChiPhi(),
               ],
             ),
           ),
@@ -461,6 +561,7 @@ class _GoodsDialogState extends State<_GoodsDialog> {
                     ? _name.text.trim().toUpperCase()
                     : _code.text.trim().toUpperCase(),
                 'default_yield_ratio': parseNumber(_ratio.text) ?? 100,
+                'cost_items': CostItem.listToJson(_chiPhi),
               });
             },
             child: const Text('Lưu'),

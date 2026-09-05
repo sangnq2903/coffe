@@ -2,7 +2,6 @@ import 'package:canxe_shared/canxe_shared.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../core/app_settings.dart';
 import '../core/formatters.dart';
 import '../core/tai_file.dart';
 import '../core/theme.dart';
@@ -47,28 +46,6 @@ double? computeTradeField({
 String soVaoO(double value) => value == value.roundToDouble()
     ? value.toStringAsFixed(0)
     : value.toString();
-
-/// Quy đổi trấu mua vào ra trấu thành phẩm và ước lời lỗ.
-///
-/// Mua trấu thô về, phơi sàng xong còn lại một phần — đó là [tyLe] phần trăm.
-/// Hai giá chỉ để **ướm thử**: số đã mua bán thật vẫn nằm nguyên trong sổ, hàm
-/// này không đụng vào.
-({double klThanhPham, double tienMua, double tienBan, double lai}) tinhQuyDoiTrau({
-  required double klMua,
-  required double tyLe,
-  required double giaMua,
-  required double giaBan,
-}) {
-  final klThanhPham = klMua * tyLe / 100;
-  final tienMua = klMua * giaMua;
-  final tienBan = klThanhPham * giaBan;
-  return (
-    klThanhPham: klThanhPham,
-    tienMua: tienMua,
-    tienBan: tienBan,
-    lai: tienBan - tienMua,
-  );
-}
 
 /// Nhóm giao dịch đang xem, theo tình trạng hoá đơn.
 enum _InvoiceFilter {
@@ -495,8 +472,6 @@ class _TradeScreenState extends State<TradeScreen> {
                   'chưa bán — đối chiếu với cột tồn bên dưới.',
             ),
           ),
-        _khoiTrau(lines),
-        const SizedBox(height: AppTheme.gapMd),
         SectionCard(
           title: 'Tồn theo mặt hàng (${lines.length})',
           subtitle: _khoangThoiGian(),
@@ -553,185 +528,6 @@ class _TradeScreenState extends State<TradeScreen> {
       ],
     );
   }
-
-  /// Quy đổi trấu mua vào ra trấu thành phẩm và ước lời lỗ.
-  ///
-  /// Lấy khối lượng trấu **đã mua** trong sổ nhân tỷ lệ thành phẩm ra số bán
-  /// được, rồi ướm với hai giá tham chiếu. Ba ô nhập sửa được vì giá thị trường
-  /// đổi luôn; số đã mua bán thật thì vẫn nằm nguyên trong sổ, khối này không
-  /// đụng vào.
-  Widget _khoiTrau(List<StockLine> lines) {
-    final settings = context.watch<AppSettings>();
-
-    // Nhận ra trấu theo tên đã bỏ dấu, không phụ thuộc vào việc có lập danh mục
-    // hay gõ tay, viết hoa hay thường.
-    final dongTrau = lines
-        .where((e) => normalizeForSearch(e.goodsName).contains('trau'))
-        .toList();
-    final klMua = dongTrau.fold<double>(0, (t, e) => t + e.quantityIn);
-    final tienMuaThat = dongTrau.fold<double>(0, (t, e) => t + e.amountIn);
-
-    final giaMua = settings.trauGiaMua;
-    final giaBan = settings.trauGiaBan;
-    final tyLe = settings.trauTyLe;
-
-    final kq = tinhQuyDoiTrau(
-      klMua: klMua,
-      tyLe: tyLe,
-      giaMua: giaMua,
-      giaBan: giaBan,
-    );
-    final klThanhPham = kq.klThanhPham;
-    final tienMuaUoc = kq.tienMua;
-    final tienBanUoc = kq.tienBan;
-    final lai = kq.lai;
-
-    return SectionCard(
-      title: 'Quy đổi trấu thành phẩm',
-      subtitle: klMua > 0
-          ? 'Từ ${formatWeight(klMua)} kg trấu đã mua trong sổ'
-          : 'Sổ chưa có lần mua trấu nào',
-      icon: Icons.grass,
-      accentColor: AppTheme.accent,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _oTrau(
-                  nhan: 'Giá mua',
-                  hau: 'đ/kg',
-                  giaTri: giaMua,
-                  onSua: (v) => settings.setTrau(giaMua: v),
-                ),
-              ),
-              const SizedBox(width: AppTheme.gapSm),
-              Expanded(
-                child: _oTrau(
-                  nhan: 'Tỷ lệ thành phẩm',
-                  hau: '%',
-                  giaTri: tyLe,
-                  onSua: (v) => settings.setTrau(tyLe: v),
-                ),
-              ),
-              const SizedBox(width: AppTheme.gapSm),
-              Expanded(
-                child: _oTrau(
-                  nhan: 'Giá bán',
-                  hau: 'đ/kg',
-                  giaTri: giaBan,
-                  onSua: (v) => settings.setTrau(giaBan: v),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.gapMd),
-          _dongTrau('Trấu mua vào',
-              '${formatWeight(klMua)} kg × ${formatMoney(giaMua)} đ', tienMuaUoc),
-          _dongTrau('Tỷ lệ thành phẩm', '${formatDecimal(tyLe)}%', null),
-          const Divider(height: 20),
-          _dongTrau(
-            'Trấu thành phẩm',
-            '${formatWeight(klMua)} kg × ${formatDecimal(tyLe)}%',
-            null,
-            soKg: klThanhPham,
-          ),
-          _dongTrau('Bán ước tính',
-              '${formatWeight(klThanhPham)} kg × ${formatMoney(giaBan)} đ', tienBanUoc),
-          const Divider(height: 20),
-          _dongTrau('Lãi ước tính', 'bán ước trừ mua ước', lai, dam: true),
-          if (klMua > 0 && (tienMuaThat - tienMuaUoc).abs() > 1) ...[
-            const SizedBox(height: AppTheme.gapSm),
-            NoticeBar(
-              icon: Icons.info_outline,
-              color: AppTheme.textMuted,
-              text: 'Tiền mua trấu thật trong sổ là ${formatMoney(tienMuaThat)} đ, '
-                  'khác với ${formatMoney(tienMuaUoc)} đ tính theo giá tham chiếu '
-                  '${formatMoney(giaMua)} đ/kg.',
-            ),
-          ],
-          const SizedBox(height: AppTheme.gapSm),
-          const Text(
-            'Đây là số ướm thử, không ghi vào sổ. Ba ô trên lưu tại máy này.',
-            style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _oTrau({
-    required String nhan,
-    required String hau,
-    required double giaTri,
-    required ValueChanged<double> onSua,
-  }) =>
-      _OSoTrau(nhan: nhan, hau: hau, giaTri: giaTri, onSua: onSua);
-
-  Widget _dongTrau(String nhan, String cachTinh, double? tien,
-          {bool dam = false, double? soKg}) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(nhan,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: dam ? FontWeight.w700 : FontWeight.w600,
-                        color: AppTheme.text,
-                      )),
-                  Text(cachTinh, style: AppTheme.meta.copyWith(fontSize: 11.5)),
-                ],
-              ),
-            ),
-            if (soKg != null)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(formatWeight(soKg),
-                      style: AppTheme.number(17, color: AppTheme.accent)),
-                  const SizedBox(width: 3),
-                  const Text('kg',
-                      style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textMuted)),
-                ],
-              )
-            else if (tien != null)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(
-                    formatMoney(tien),
-                    style: AppTheme.number(
-                      dam ? 18 : 15,
-                      color: dam
-                          ? (tien < 0 ? AppTheme.offline : AppTheme.primary)
-                          : AppTheme.text,
-                    ),
-                  ),
-                  const SizedBox(width: 3),
-                  const Text('đ',
-                      style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textMuted)),
-                ],
-              ),
-          ],
-        ),
-      );
 
   String _khoangThoiGian() {
     final dau = _stock.firstDate;
@@ -1142,65 +938,6 @@ class _LocTheoDanhMuc extends StatelessWidget {
   }
 }
 
-/// Một ô số trong khối quy đổi trấu.
-///
-/// Ghi lại khi gõ xong — bấm Enter hoặc rời khỏi ô — chứ không theo từng phím:
-/// gõ dở "8000" mà lưu ngay từ số "8" thì mấy dòng bên dưới nhảy loạn.
-class _OSoTrau extends StatefulWidget {
-  const _OSoTrau({
-    required this.nhan,
-    required this.hau,
-    required this.giaTri,
-    required this.onSua,
-  });
-
-  final String nhan;
-  final String hau;
-  final double giaTri;
-  final ValueChanged<double> onSua;
-
-  @override
-  State<_OSoTrau> createState() => _OSoTrauState();
-}
-
-class _OSoTrauState extends State<_OSoTrau> {
-  late final _o = TextEditingController(text: soVaoO(widget.giaTri));
-
-  @override
-  void didUpdateWidget(_OSoTrau cu) {
-    super.didUpdateWidget(cu);
-    // Giá đổi từ nơi khác (mở lại màn hình) thì ô phải theo, nhưng không giật
-    // con trỏ của người đang gõ.
-    if (widget.giaTri != cu.giaTri && parseNumber(_o.text) != widget.giaTri) {
-      _o.text = soVaoO(widget.giaTri);
-    }
-  }
-
-  @override
-  void dispose() {
-    _o.dispose();
-    super.dispose();
-  }
-
-  void _ghi() {
-    final n = parseNumber(_o.text);
-    if (n != null && n >= 0 && n != widget.giaTri) widget.onSua(n);
-  }
-
-  @override
-  Widget build(BuildContext context) => Focus(
-        onFocusChange: (co) {
-          if (!co) _ghi();
-        },
-        child: TextField(
-          controller: _o,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(labelText: widget.nhan, suffixText: widget.hau),
-          onSubmitted: (_) => _ghi(),
-        ),
-      );
-}
-
 /// Nút mũi tên lùi/tới một tháng, cỡ chạm được bằng ngón cái.
 class _StepButton extends StatelessWidget {
   const _StepButton({required this.tooltip, required this.icon, required this.onTap});
@@ -1253,6 +990,10 @@ class _TradeDialogState extends State<_TradeDialog> {
   late TradeKind _kind = widget.trade?.kind ?? TradeKind.muaVao;
   late DateTime _date = widget.trade?.date ?? widget.defaultDate;
   late String? _goodsId = widget.trade?.goodsTypeId;
+
+  /// Bảng chi phí của chuyến này. Chọn loại hàng khi **bán ra** thì lấy định
+  /// mức của loại hàng đó; sửa được vì có chuyến chi phí khác thường.
+  late List<CostItem> _chiPhi = [...?widget.trade?.costItems];
   late String? _partnerId = widget.trade?.partnerId;
   late bool _hasInvoice = widget.trade?.hasInvoice ?? false;
 
@@ -1327,6 +1068,148 @@ class _TradeDialogState extends State<_TradeDialog> {
     super.dispose();
   }
 
+  /// Nạp lại định mức chi phí của loại hàng đang chọn.
+  ///
+  /// Chỉ nạp khi người dùng chưa tự sửa gì: gõ tay một bảng riêng rồi đổi qua
+  /// đổi lại chiều giao dịch mà mất hết thì rất ức chế.
+  void _theoDinhMuc() {
+    if (_kind != TradeKind.banRa) return;
+    if (_chiPhi.isNotEmpty && _daSuaChiPhi) return;
+    final hang = widget.goods.where((g) => g.id == _goodsId).firstOrNull;
+    _chiPhi = [...?hang?.costItems];
+  }
+
+  bool _daSuaChiPhi = false;
+
+  /// Bảng chi phí của chuyến bán: từng khoản đ/kg, tổng, và lãi.
+  Widget _bangChiPhi() {
+    final kl = parseNumber(_quantity.text) ?? 0;
+    final tien = parseNumber(_amount.text) ?? 0;
+    final perKg = CostItem.perKgTotal(_chiPhi);
+    final tongChi = perKg * kl;
+    final lai = tien - tongChi;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text('Chi phí để ra số hàng này',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            ),
+            TextButton.icon(
+              onPressed: () => setState(() {
+                _daSuaChiPhi = true;
+                _chiPhi = [..._chiPhi, const CostItem(name: '', perKg: 0)];
+              }),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Thêm khoản'),
+            ),
+          ],
+        ),
+        if (_chiPhi.isEmpty)
+          const Text(
+            'Loại hàng này chưa khai định mức chi phí. Vào Danh mục > Loại hàng '
+            'để khai tiền mua, điện, xe, công — hoặc thêm khoản ngay tại đây.',
+            style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted, height: 1.35),
+          )
+        else
+          for (var i = 0; i < _chiPhi.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextFormField(
+                      key: ValueKey('ten-$i-${_chiPhi[i].name}'),
+                      initialValue: _chiPhi[i].name,
+                      decoration:
+                          const InputDecoration(labelText: 'Khoản chi', isDense: true),
+                      onChanged: (v) {
+                        _daSuaChiPhi = true;
+                        _chiPhi[i] = _chiPhi[i].copyWith(name: v);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.gapSm),
+                  Expanded(
+                    flex: 2,
+                    child: TextFormField(
+                      key: ValueKey('gia-$i-${_chiPhi[i].perKg}'),
+                      initialValue: _chiPhi[i].perKg == 0
+                          ? ''
+                          : soVaoO(_chiPhi[i].perKg),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration:
+                          const InputDecoration(suffixText: 'đ/kg', isDense: true),
+                      onChanged: (v) => setState(() {
+                        _daSuaChiPhi = true;
+                        _chiPhi[i] = _chiPhi[i].copyWith(perKg: parseNumber(v) ?? 0);
+                      }),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Bỏ khoản này',
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => setState(() {
+                      _daSuaChiPhi = true;
+                      _chiPhi = [..._chiPhi]..removeAt(i);
+                    }),
+                  ),
+                ],
+              ),
+            ),
+        if (_chiPhi.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _dongTinh('Tổng chi phí', '${formatMoney(perKg)} đ/kg × ${formatWeight(kl)} kg',
+              tongChi),
+          _dongTinh('Tiền bán', formatWeight(kl) == '0' ? '—' : 'đã nhập ở trên', tien),
+          const Divider(height: 16),
+          _dongTinh(
+            lai < 0 ? 'Lỗ' : 'Lãi',
+            'tiền bán trừ chi phí'
+                '${kl > 0 ? ' • ${formatMoney(lai / kl)} đ/kg' : ''}',
+            lai,
+            dam: true,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _dongTinh(String nhan, String phu, double tien, {bool dam = false}) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(nhan,
+                      style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: dam ? FontWeight.w700 : FontWeight.w600)),
+                  Text(phu, style: AppTheme.meta.copyWith(fontSize: 11.5)),
+                ],
+              ),
+            ),
+            Text(
+              '${formatMoney(tien)} đ',
+              style: AppTheme.number(
+                dam ? 17 : 14.5,
+                color: dam
+                    ? (tien < 0 ? AppTheme.offline : AppTheme.primary)
+                    : AppTheme.text,
+              ),
+            ),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final kl = parseNumber(_quantity.text) ?? 0;
@@ -1364,7 +1247,10 @@ class _TradeDialogState extends State<_TradeDialog> {
                   ],
                   selected: {_kind},
                   showSelectedIcon: false,
-                  onSelectionChanged: (c) => setState(() => _kind = c.first),
+                  onSelectionChanged: (c) => setState(() {
+                    _kind = c.first;
+                    _theoDinhMuc();
+                  }),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
@@ -1391,7 +1277,10 @@ class _TradeDialogState extends State<_TradeDialog> {
                     for (final g in widget.goods)
                       DropdownMenuItem<String?>(value: g.id, child: Text(g.name)),
                   ],
-                  onChanged: (v) => setState(() => _goodsId = v),
+                  onChanged: (v) => setState(() {
+                    _goodsId = v;
+                    _theoDinhMuc();
+                  }),
                 ),
                 if (_goodsId == null) ...[
                   const SizedBox(height: 8),
@@ -1490,6 +1379,10 @@ class _TradeDialogState extends State<_TradeDialog> {
                     decoration: const InputDecoration(labelText: 'Số hoá đơn'),
                   ),
                 ],
+                if (_kind == TradeKind.banRa) ...[
+                  const Divider(height: 28),
+                  _bangChiPhi(),
+                ],
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _note,
@@ -1520,6 +1413,7 @@ class _TradeDialogState extends State<_TradeDialog> {
                 amount: parseNumber(_amount.text) ?? 0,
                 hasInvoice: _hasInvoice,
                 invoiceNo: _hasInvoice ? _invoiceNo.text.trim() : null,
+                costItems: _kind == TradeKind.banRa ? _chiPhi : const [],
                 note: _note.text.trim(),
               ),
             );

@@ -1,5 +1,6 @@
 import '../ids.dart';
 import '../json_utils.dart';
+import 'cost_item.dart';
 
 /// Loại hàng: trấu, cà nhân, cà tươi, cà khô... Danh mục mở, người dùng thêm
 /// được loại mới mà không phải sửa code.
@@ -10,6 +11,7 @@ class GoodsType {
     required this.name,
     this.unit = 'kg',
     this.defaultYieldRatio = 100,
+    this.costItems = const [],
     this.sortOrder = 0,
     this.active = true,
     required this.updatedAt,
@@ -21,6 +23,7 @@ class GoodsType {
     required String name,
     String unit = 'kg',
     double defaultYieldRatio = 100,
+    List<CostItem> costItems = const [],
     int sortOrder = 0,
   }) =>
       GoodsType(
@@ -29,6 +32,7 @@ class GoodsType {
         name: name,
         unit: unit,
         defaultYieldRatio: defaultYieldRatio,
+        costItems: costItems,
         sortOrder: sortOrder,
         updatedAt: DateTime.now(),
       );
@@ -39,6 +43,7 @@ class GoodsType {
         name: asString(json['name']),
         unit: asString(json['unit'], fallback: 'kg'),
         defaultYieldRatio: asDouble(json['default_yield_ratio'], fallback: 100),
+        costItems: CostItem.listFromJson(json['cost_items']),
         sortOrder: asInt(json['sort_order']),
         active: asBool(json['active'], fallback: true),
         updatedAt: asTime(json['updated_at']),
@@ -98,6 +103,14 @@ class GoodsType {
 
   /// Tỷ lệ thành phẩm mặc định (%), ví dụ cà tươi ~20% ra cà nhân.
   final double defaultYieldRatio;
+
+  /// Định mức chi phí để ra được một ký hàng này: tiền mua nguyên liệu, điện,
+  /// xe, công... Dùng để tính lãi thật mỗi khi bán.
+  final List<CostItem> costItems;
+
+  /// Tổng chi phí định mức, đ/kg.
+  double get costPerKg => CostItem.perKgTotal(costItems);
+
   final int sortOrder;
   final bool active;
   final DateTime updatedAt;
@@ -109,6 +122,7 @@ class GoodsType {
         'name': name,
         'unit': unit,
         'default_yield_ratio': defaultYieldRatio,
+        'cost_items': CostItem.listToJson(costItems),
         'sort_order': sortOrder,
         'active': active ? 1 : 0,
         'updated_at': timeToMillis(updatedAt),
@@ -120,6 +134,7 @@ class GoodsType {
     String? name,
     String? unit,
     double? defaultYieldRatio,
+    List<CostItem>? costItems,
     int? sortOrder,
     bool? active,
     bool? deleted,
@@ -130,6 +145,7 @@ class GoodsType {
         name: name ?? this.name,
         unit: unit ?? this.unit,
         defaultYieldRatio: defaultYieldRatio ?? this.defaultYieldRatio,
+        costItems: costItems ?? this.costItems,
         sortOrder: sortOrder ?? this.sortOrder,
         active: active ?? this.active,
         updatedAt: DateTime.now(),

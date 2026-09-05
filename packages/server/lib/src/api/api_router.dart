@@ -307,12 +307,24 @@ class ApiRouter {
       }
       final id = asStringOrNull(body['id']);
       final existing = id == null ? null : repo.goodsTypeById(id);
+
+      // Định mức chi phí đ/kg: không gửi thì giữ nguyên, gửi thì thay cả bảng.
+      final chiPhi = body.containsKey('cost_items')
+          ? CostItem.listFromJson(body['cost_items'])
+          : existing?.costItems ?? const <CostItem>[];
+      for (final c in chiPhi) {
+        if (c.perKg < 0) {
+          return _error('Khoản chi "${c.name}" không được âm.', 400);
+        }
+      }
+
       final goods = existing == null
           ? GoodsType.create(
               code: asString(body['code'], fallback: name.toUpperCase()),
               name: name,
               unit: asString(body['unit'], fallback: 'kg'),
               defaultYieldRatio: ratio,
+              costItems: chiPhi,
               sortOrder: asInt(body['sort_order']),
             )
           : existing.copyWith(
@@ -320,6 +332,7 @@ class ApiRouter {
               name: name,
               unit: asString(body['unit'], fallback: existing.unit),
               defaultYieldRatio: ratio,
+              costItems: chiPhi,
               sortOrder: asInt(body['sort_order'], fallback: existing.sortOrder),
               active: asBool(body['active'], fallback: existing.active),
             );

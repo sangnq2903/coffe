@@ -1,5 +1,6 @@
 import '../ids.dart';
 import '../json_utils.dart';
+import 'cost_item.dart';
 
 /// Chiều của một giao dịch mua bán.
 enum TradeKind {
@@ -47,6 +48,7 @@ class Trade {
     required this.amount,
     this.hasInvoice = false,
     this.invoiceNo,
+    this.costItems = const [],
     this.note,
     this.createdBy,
     required this.updatedAt,
@@ -66,6 +68,7 @@ class Trade {
     required double amount,
     bool hasInvoice = false,
     String? invoiceNo,
+    List<CostItem> costItems = const [],
     String? note,
     String? createdBy,
   }) =>
@@ -83,6 +86,7 @@ class Trade {
         amount: amount,
         hasInvoice: hasInvoice,
         invoiceNo: invoiceNo,
+        costItems: costItems,
         note: note,
         createdBy: createdBy,
         updatedAt: DateTime.now(),
@@ -102,6 +106,7 @@ class Trade {
         amount: asDouble(json['amount']),
         hasInvoice: asBool(json['has_invoice']),
         invoiceNo: asStringOrNull(json['invoice_no']),
+        costItems: CostItem.listFromJson(json['cost_items']),
         note: asStringOrNull(json['note']),
         createdBy: asStringOrNull(json['created_by']),
         updatedAt: asTime(json['updated_at']),
@@ -143,6 +148,26 @@ class Trade {
   /// Số hoá đơn, nếu có ghi lại.
   final String? invoiceNo;
 
+  /// Bảng chi phí **chép lại lúc ghi giao dịch**.
+  ///
+  /// Chép chứ không tra lại định mức của loại hàng: sửa định mức hôm nay không
+  /// được làm đổi lãi của lần bán tháng trước. Giống cách ngày chấm công giữ
+  /// mức lương lúc chấm.
+  final List<CostItem> costItems;
+
+  /// Chi phí định mức cho một ký, đ/kg.
+  double get costPerKg => CostItem.perKgTotal(costItems);
+
+  /// Tổng chi phí của cả chuyến: đ/kg nhân khối lượng.
+  double get totalCost => costPerKg * quantity;
+
+  /// Lãi của một lần **bán ra**: tiền thu về trừ chi phí.
+  ///
+  /// `null` khi là lần mua vào hoặc chưa khai chi phí — không có gì để so thì
+  /// đừng bịa ra số 0, dễ đọc nhầm thành hoà vốn.
+  double? get profit =>
+      kind == TradeKind.banRa && costItems.isNotEmpty ? amount - totalCost : null;
+
   final String? note;
   final String? createdBy;
   final DateTime updatedAt;
@@ -171,6 +196,7 @@ class Trade {
         'amount': amount,
         'has_invoice': hasInvoice ? 1 : 0,
         'invoice_no': invoiceNo,
+        'cost_items': CostItem.listToJson(costItems),
         'note': note,
         'created_by': createdBy,
         'updated_at': timeToMillis(updatedAt),
@@ -190,6 +216,7 @@ class Trade {
     double? amount,
     bool? hasInvoice,
     String? invoiceNo,
+    List<CostItem>? costItems,
     String? note,
     bool? deleted,
   }) =>
@@ -207,6 +234,7 @@ class Trade {
         amount: amount ?? this.amount,
         hasInvoice: hasInvoice ?? this.hasInvoice,
         invoiceNo: invoiceNo ?? this.invoiceNo,
+        costItems: costItems ?? this.costItems,
         note: note ?? this.note,
         createdBy: createdBy,
         updatedAt: DateTime.now(),

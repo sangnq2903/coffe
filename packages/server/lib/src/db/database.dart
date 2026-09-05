@@ -105,6 +105,28 @@ class AppDatabase {
       _createV6();
       db.execute('PRAGMA user_version = 6;');
     }
+    if (version < 7) {
+      _createV7();
+      db.execute('PRAGMA user_version = 7;');
+    }
+  }
+
+  /// Phiên bản 7: định mức chi phí theo đ/kg cho từng loại hàng.
+  ///
+  /// Bán một ký trấu thì tốn bao nhiêu mới ra được ký đó — tiền mua nguyên
+  /// liệu, điện, xe, công. Mỗi lần bán chép lại bảng chi phí lúc đó vào giao
+  /// dịch, để sửa định mức hôm nay không làm đổi lãi của lần bán tháng trước.
+  void _createV7() {
+    for (final sql in [
+      'ALTER TABLE goods_types ADD COLUMN cost_items TEXT',
+      'ALTER TABLE giao_dich ADD COLUMN cost_items TEXT',
+    ]) {
+      try {
+        db.execute(sql);
+      } on SqliteException {
+        // Cột đã có sẵn (cơ sở dữ liệu dựng mới bằng lược đồ mới nhất).
+      }
+    }
   }
 
   /// Phiên bản 6: sổ mua bán, chỉ chủ mới xem được.

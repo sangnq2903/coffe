@@ -6,6 +6,7 @@ export 'src/ids.dart';
 export 'src/auth/password.dart';
 export 'src/auth/session_token.dart';
 export 'src/models/app_user.dart';
+export 'src/models/cost_item.dart';
 export 'src/models/customer.dart';
 export 'src/models/payroll/attendance.dart';
 export 'src/models/payroll/crew.dart';

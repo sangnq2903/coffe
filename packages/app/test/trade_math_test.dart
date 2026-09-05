@@ -94,33 +94,4 @@ void main() {
     });
   });
 
-  group('Quy đổi trấu thành phẩm', () {
-    test('đúng ví dụ đã chốt: 10.000 kg, 80%, mua 1.500, bán 8.000', () {
-      final r = tinhQuyDoiTrau(klMua: 10000, tyLe: 80, giaMua: 1500, giaBan: 8000);
-      expect(r.klThanhPham, 8000);
-      expect(r.tienMua, 15000000);
-      expect(r.tienBan, 64000000);
-      expect(r.lai, 49000000);
-    });
-
-    test('tỷ lệ 100% thì thành phẩm bằng đúng số mua', () {
-      final r = tinhQuyDoiTrau(klMua: 10000, tyLe: 100, giaMua: 1500, giaBan: 8000);
-      expect(r.klThanhPham, 10000);
-      expect(r.lai, 65000000);
-    });
-
-    test('chưa mua trấu thì mọi số bằng 0, không lỗi chia', () {
-      final r = tinhQuyDoiTrau(klMua: 0, tyLe: 80, giaMua: 1500, giaBan: 8000);
-      expect(r.klThanhPham, 0);
-      expect(r.lai, 0);
-    });
-
-    test('bán rẻ hơn mua thì lãi ra số âm chứ không giấu đi', () {
-      // Tỷ lệ thành phẩm thấp mà giá bán không bù nổi thì lỗ — phải thấy được.
-      final r = tinhQuyDoiTrau(klMua: 10000, tyLe: 10, giaMua: 1500, giaBan: 8000);
-      expect(r.klThanhPham, 1000);
-      expect(r.lai, 8000000 - 15000000);
-      expect(r.lai < 0, isTrue);
-    });
-  });
 }

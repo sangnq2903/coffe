@@ -218,11 +218,13 @@ class Repository {
 
   GoodsType upsertGoodsType(GoodsType goods, {bool dirty = true}) {
     _db.execute('''
-      INSERT INTO goods_types (id, code, name, unit, default_yield_ratio, sort_order, active, updated_at, deleted, dirty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO goods_types (id, code, name, unit, default_yield_ratio, cost_items,
+        sort_order, active, updated_at, deleted, dirty)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         code = excluded.code, name = excluded.name, unit = excluded.unit,
-        default_yield_ratio = excluded.default_yield_ratio, sort_order = excluded.sort_order,
+        default_yield_ratio = excluded.default_yield_ratio,
+        cost_items = excluded.cost_items, sort_order = excluded.sort_order,
         active = excluded.active, updated_at = excluded.updated_at,
         deleted = excluded.deleted, dirty = excluded.dirty
       WHERE excluded.updated_at >= goods_types.updated_at
@@ -232,6 +234,7 @@ class Repository {
       goods.name,
       goods.unit,
       goods.defaultYieldRatio,
+      CostItem.listToJson(goods.costItems),
       goods.sortOrder,
       goods.active ? 1 : 0,
       timeToMillis(goods.updatedAt),

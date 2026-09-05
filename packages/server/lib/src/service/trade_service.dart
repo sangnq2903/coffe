@@ -63,19 +63,23 @@ class TradeService {
   /// Hàng nhập tháng này bán sang tháng sau là chuyện thường, nên hỏi "còn bao
   /// nhiêu trong kho" mà chỉ nhìn một tháng thì ra số vô nghĩa.
   ///
-  /// Gộp theo loại hàng trong danh mục; thứ gõ tay không có trong danh mục thì
-  /// gộp theo tên đã bỏ dấu, để "Cà nhân" và "ca nhan" không thành hai dòng.
+  /// Gộp theo **tên đã bỏ dấu**, không theo mã loại hàng.
+  ///
+  /// Cùng một mặt hàng có lúc chọn trong danh mục, có lúc gõ tay — gộp theo mã
+  /// thì mua một dòng bán một dòng, tồn ra số âm vô lý. Tên thì luôn có, và đã
+  /// bỏ dấu nên "Cà nhân", "ca nhan", "CÀ NHÂN" về cùng một dòng.
   TradeStock stock({DateTime? from, DateTime? to}) {
     final all = _trades.trades(from: from, to: to);
 
     final gop = <String, StockLine>{};
     for (final t in all) {
-      final khoa = t.goodsTypeId ?? 'ten:${normalizeForSearch(t.goodsName)}';
+      final ten = normalizeForSearch(t.goodsName);
+      final khoa = ten.isEmpty ? 'khong-ten' : ten;
       final cu = gop[khoa];
       final laNhap = t.kind == TradeKind.muaVao;
 
       gop[khoa] = StockLine(
-        goodsTypeId: t.goodsTypeId,
+        goodsTypeId: t.goodsTypeId ?? cu?.goodsTypeId,
         goodsName: cu?.goodsName.isNotEmpty ?? false
             ? cu!.goodsName
             : (t.goodsName.isEmpty ? '(không ghi tên hàng)' : t.goodsName),
@@ -149,6 +153,21 @@ class TradeService {
         ? TradeKind.parse(body['kind'])
         : existing?.kind ?? TradeKind.muaVao;
 
+    // Bán ra thì chép lại định mức chi phí của loại hàng tại thời điểm này.
+    //
+    // Chép chứ không tra lại lúc đọc: sửa định mức hôm nay không được làm đổi
+    // lãi của lần bán tháng trước. Client gửi kèm bảng riêng thì tôn trọng —
+    // có chuyến chi phí khác thường (thuê xe xa hơn) nên phải sửa được.
+    final costItems = body.containsKey('cost_items')
+        ? CostItem.listFromJson(body['cost_items'])
+        : (existing?.costItems ??
+            (kind == TradeKind.banRa ? goods?.costItems ?? const [] : const []));
+    for (final c in costItems) {
+      if (c.perKg < 0) {
+        throw BusinessException('Khoản chi "${c.name}" không được âm.');
+      }
+    }
+
     final trade = existing == null
         ? Trade.create(
             date: date,
@@ -163,6 +182,7 @@ class TradeService {
             amount: amount,
             hasInvoice: hasInvoice,
             invoiceNo: asStringOrNull(body['invoice_no']),
+            costItems: costItems,
             note: asStringOrNull(body['note']),
             createdBy: createdBy,
           )
@@ -179,6 +199,7 @@ class TradeService {
             amount: amount,
             hasInvoice: hasInvoice,
             invoiceNo: asStringOrNull(body['invoice_no']),
+            costItems: costItems,
             note: asStringOrNull(body['note']),
           );
 

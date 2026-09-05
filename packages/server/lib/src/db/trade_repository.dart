@@ -85,8 +85,8 @@ class TradeRepository {
     _db.execute('''
       INSERT INTO giao_dich (id, date, kind, goods_type_id, goods_name, partner_id,
         partner_name, quantity, unit, unit_price, amount, has_invoice, invoice_no,
-        note, created_by, updated_at, deleted, dirty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        cost_items, note, created_by, updated_at, deleted, dirty)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         date = excluded.date, kind = excluded.kind,
         goods_type_id = excluded.goods_type_id, goods_name = excluded.goods_name,
@@ -94,6 +94,7 @@ class TradeRepository {
         quantity = excluded.quantity, unit = excluded.unit,
         unit_price = excluded.unit_price, amount = excluded.amount,
         has_invoice = excluded.has_invoice, invoice_no = excluded.invoice_no,
+        cost_items = excluded.cost_items,
         note = excluded.note, updated_at = excluded.updated_at,
         deleted = excluded.deleted, dirty = excluded.dirty
       WHERE excluded.updated_at >= giao_dich.updated_at
@@ -111,6 +112,7 @@ class TradeRepository {
       trade.amount,
       trade.hasInvoice ? 1 : 0,
       trade.invoiceNo,
+      CostItem.listToJson(trade.costItems),
       trade.note,
       trade.createdBy,
       timeToMillis(trade.updatedAt),

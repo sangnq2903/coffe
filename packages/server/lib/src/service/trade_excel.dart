@@ -31,6 +31,10 @@ abstract final class TradeExcel {
       'Thành tiền',
       'Hoá đơn',
       'Số hoá đơn',
+      'Chi phí/kg',
+      'Tổng chi phí',
+      'Lãi',
+      'Chi tiết chi phí',
       'Ghi chú',
       'Người ghi',
     ], dam: true);
@@ -48,6 +52,12 @@ abstract final class TradeExcel {
         // Viết hẳn chữ chứ không để 0/1: kế toán lọc theo cột này.
         t.hasInvoice ? 'Có' : 'Không',
         t.invoiceNo ?? '',
+        t.costItems.isEmpty ? null : t.costPerKg,
+        t.costItems.isEmpty ? null : t.totalCost,
+        t.profit,
+        // Gộp thành một ô chữ: mỗi loại hàng một bộ khoản chi khác nhau, tách
+        // ra thành cột riêng thì bảng có hàng chục cột hầu hết bỏ trống.
+        t.costItems.map((c) => '${c.name} ${c.perKg.round()}').join('; '),
         t.note ?? '',
         t.createdBy ?? '',
       ]);
@@ -64,6 +74,10 @@ abstract final class TradeExcel {
       summary.amountIn + summary.amountOut,
       '',
       '',
+      null,
+      trades.fold<double>(0, (t, e) => t + (e.costItems.isEmpty ? 0 : e.totalCost)),
+      trades.fold<double>(0, (t, e) => t + (e.profit ?? 0)),
+      '',
       '',
       '',
     ], dam: true);
@@ -74,7 +88,7 @@ abstract final class TradeExcel {
     _hang(sheet, ['Có hoá đơn', summary.amountInvoiced]);
     _hang(sheet, ['Không hoá đơn', summary.amountNotInvoiced]);
 
-    _rong(sheet, [14, 10, 26, 26, 13, 6, 14, 16, 10, 14, 30, 12]);
+    _rong(sheet, [14, 10, 26, 26, 13, 6, 14, 16, 10, 14, 12, 16, 16, 34, 30, 12]);
     return book.save() ?? const [];
   }
 
