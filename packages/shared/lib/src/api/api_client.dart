@@ -117,6 +117,14 @@ class ApiClient {
         scheme: _baseUrl.scheme == 'https' ? 'wss' : 'ws',
       );
 
+  /// Địa chỉ để **tải file** thẳng từ máy chủ, có kèm phiếu phiên.
+  ///
+  /// Cùng lý do với [wsUri]: trình duyệt tải file bằng cách mở địa chỉ, không
+  /// gắn được tiêu đề Authorization vào đó. Phần ghi nhật ký của máy chủ đã che
+  /// chuỗi `token=` nên nó không lọt vào file log.
+  Uri downloadUri(String path, [Map<String, String>? query]) =>
+      _build(path, {...?query, if (hasToken) 'token': authToken!});
+
   void close() => _http.close();
 
   // ---------------------------------------------------------------- hệ thống

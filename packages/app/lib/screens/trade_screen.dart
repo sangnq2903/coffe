@@ -1,6 +1,7 @@
 import 'package:canxe_shared/canxe_shared.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/formatters.dart';
 import '../core/theme.dart';
@@ -195,6 +196,36 @@ class _TradeScreenState extends State<TradeScreen> {
     }
   }
 
+  /// Tải file Excel về máy để gửi kế toán.
+  ///
+  /// Mở thẳng địa chỉ thay vì tải bằng mã rồi tự lưu: máy chủ đã gắn
+  /// `Content-Disposition: attachment` nên trình duyệt tự tải, không phải nhồi
+  /// cả file vào bộ nhớ của trang.
+  ///
+  /// Xuất **đúng phần đang lọc**: lọc "chưa có hoá đơn" rồi bấm xuất là ra đúng
+  /// danh sách cần đối chiếu, chứ không phải cả sổ.
+  Future<void> _xuatExcel() async {
+    final client = _client;
+    if (client == null) return;
+
+    final uri = _tongQuan
+        ? client.downloadUri('/api/giao-dich/tong-quan/xuat-excel')
+        : client.downloadUri('/api/giao-dich/xuat-excel', {
+            'from': timeToMillis(_from).toString(),
+            'to': timeToMillis(_to).toString(),
+            if (_kind != null) 'kind': _kind!.value,
+            if (_invoice.value != null) 'hoa_don': _invoice.value! ? '1' : '0',
+            if (_goodsFilter != null) 'goods_type_id': _goodsFilter!,
+            if (_partnerFilter != null) 'partner_id': _partnerFilter!,
+            if (_search.text.trim().isNotEmpty) 'q': _search.text.trim(),
+          });
+
+    final xong = await launchUrl(uri, webOnlyWindowName: '_self');
+    if (!xong && mounted) {
+      setState(() => _error = 'Không mở được đường dẫn tải file: $uri');
+    }
+  }
+
   Future<void> _delete(Trade trade) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -255,6 +286,12 @@ class _TradeScreenState extends State<TradeScreen> {
                 },
               ),
               const Spacer(),
+              OutlinedButton.icon(
+                onPressed: _xuatExcel,
+                icon: const Icon(Icons.file_download_outlined, size: 18),
+                label: const Text('Xuất Excel'),
+              ),
+              const SizedBox(width: AppTheme.gapSm),
               FilledButton.icon(
                 onPressed: () => _edit(),
                 icon: const Icon(Icons.add),

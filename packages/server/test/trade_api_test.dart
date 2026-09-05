@@ -390,6 +390,37 @@ void main() {
       expect(phan.single.quantityIn, 200);
     });
 
+    test('xuất được file Excel của phần đang lọc', () async {
+      final res = await call(
+        'GET',
+        '/api/giao-dich/xuat-excel?from=${ngay(2026, 9, 1)}&to=${ngay(2026, 9, 30)}',
+        token: tokenChu,
+      );
+      expect(res.statusCode, 200);
+      expect(res.headers['content-type'], contains('spreadsheetml.sheet'));
+      expect(res.headers['content-disposition'], contains('so-mua-ban-2026-09.xlsx'));
+
+      final bytes = await res.read().expand((e) => e).toList();
+      expect(bytes.length, greaterThan(1000));
+      // .xlsx là một file zip: hai byte đầu luôn là 'PK'.
+      expect(bytes.take(2).toList(), [0x50, 0x4B]);
+    });
+
+    test('xuất được file tồn kho', () async {
+      final res =
+          await call('GET', '/api/giao-dich/tong-quan/xuat-excel', token: tokenChu);
+      expect(res.statusCode, 200);
+      expect(res.headers['content-disposition'], contains('ton-kho.xlsx'));
+      final bytes = await res.read().expand((e) => e).toList();
+      expect(bytes.take(2).toList(), [0x50, 0x4B]);
+    });
+
+    test('xuất Excel cũng chỉ dành cho tài khoản chủ', () async {
+      expect((await call('GET', '/api/giao-dich/xuat-excel', token: tokenTong)).statusCode,
+          403);
+      expect((await call('GET', '/api/giao-dich/xuat-excel')).statusCode, 401);
+    });
+
     test('tổng quan cũng chỉ dành cho tài khoản chủ', () async {
       expect((await call('GET', '/api/giao-dich/tong-quan', token: tokenTong)).statusCode,
           403);

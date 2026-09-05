@@ -2,6 +2,7 @@ import 'package:canxe_shared/canxe_shared.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
+import '../service/trade_excel.dart';
 import '../service/trade_service.dart';
 
 /// Các đường dẫn API của **sổ mua bán**.
@@ -67,6 +68,51 @@ class TradeRouter {
           });
         }));
 
+    // Xuất Excel để gửi kế toán. Xuất đúng phần đang lọc, không phải cả sổ:
+    // lọc "chưa có hoá đơn" rồi bấm xuất là ra đúng danh sách cần đối chiếu.
+    router.get('/api/giao-dich/xuat-excel', (Request request) => guard(() {
+          final chan = _chan(request);
+          if (chan != null) return chan;
+
+          final q = request.url.queryParameters;
+          final loc = _filters(q);
+          final data = TradeExcel.transactions(
+            trades: service.list(
+              from: loc.from,
+              to: loc.to,
+              kind: loc.kind,
+              hasInvoice: loc.hasInvoice,
+              goodsTypeId: loc.goodsTypeId,
+              partnerId: loc.partnerId,
+              query: loc.query,
+            ),
+            summary: service.summary(
+              from: loc.from,
+              to: loc.to,
+              kind: loc.kind,
+              hasInvoice: loc.hasInvoice,
+              goodsTypeId: loc.goodsTypeId,
+              partnerId: loc.partnerId,
+              query: loc.query,
+            ),
+            from: loc.from,
+            to: loc.to,
+          );
+          return _fileExcel(data, 'so-mua-ban${_hauTo(loc.from)}');
+        }));
+
+    router.get('/api/giao-dich/tong-quan/xuat-excel',
+        (Request request) => guard(() {
+              final chan = _chan(request);
+              if (chan != null) return chan;
+              final q = request.url.queryParameters;
+              final data = TradeExcel.stock(service.stock(
+                from: asTimeOrNull(q['from']),
+                to: asTimeOrNull(q['to']),
+              ));
+              return _fileExcel(data, 'ton-kho');
+            }));
+
     // Trang tổng quan: tồn kho cộng dồn cả sổ, không cắt theo tháng.
     router.get('/api/giao-dich/tong-quan', (Request request) => guard(() {
           final chan = _chan(request);
@@ -111,6 +157,25 @@ class TradeRouter {
           return json({'ok': true});
         }));
   }
+
+  /// Trả file .xlsx cho trình duyệt tải về.
+  ///
+  /// Tên file để nguyên chữ không dấu: `Content-Disposition` mà có dấu tiếng
+  /// Việt thì mỗi trình duyệt đoán một kiểu, ra tên file hỏng.
+  Response _fileExcel(List<int> data, String ten) => Response.ok(
+        data,
+        headers: {
+          'content-type':
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'content-disposition': 'attachment; filename="$ten.xlsx"',
+          'content-length': '${data.length}',
+        },
+      );
+
+  /// Hậu tố tháng cho tên file, để tải nhiều lần không đè lên nhau.
+  static String _hauTo(DateTime? from) => from == null
+      ? ''
+      : '-${from.year}-${from.month.toString().padLeft(2, '0')}';
 
   /// Số dòng tối đa; bỏ trống hoặc 0 nghĩa là lấy hết.
   static int? _limit(String? raw) {
