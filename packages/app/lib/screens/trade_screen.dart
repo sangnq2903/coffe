@@ -6,6 +6,70 @@ import '../core/formatters.dart';
 import '../core/theme.dart';
 import '../state/server_connection.dart';
 
+/// Ba ô ràng buộc nhau bởi phép nhân: khối lượng × đơn giá = thành tiền.
+enum TradeField { khoiLuong, donGia, thanhTien }
+
+/// Điền ô còn thiếu từ hai ô đã có.
+///
+/// Nhập hai trong ba ô là ô thứ ba tính ra được. Khi cả ba đều đã có số thì ô
+/// vừa gõ luôn được giữ nguyên, và ô nào tính lại thì theo lẽ thường của việc
+/// mua bán:
+///
+/// - Sửa **khối lượng** hoặc **đơn giá** → tính lại **thành tiền**.
+/// - Sửa **thành tiền** → tính lại **đơn giá**, không đụng khối lượng. Khối
+///   lượng là số cân được, còn đơn giá mới là thứ thay đổi khi bớt giá cho
+///   khách hay làm tròn tiền lúc chốt.
+///
+/// Ô người dùng vừa gõ không bao giờ bị ghi đè, kể cả khi họ xoá trắng nó.
+({double? quantity, double? unitPrice, double? amount}) fillTradeMath({
+  required double? quantity,
+  required double? unitPrice,
+  required double? amount,
+  required TradeField justEdited,
+}) {
+  bool trong(double? v) => v == null || v <= 0;
+
+  final oTrong = [
+    if (trong(quantity)) TradeField.khoiLuong,
+    if (trong(unitPrice)) TradeField.donGia,
+    if (trong(amount)) TradeField.thanhTien,
+  ];
+
+  // Thiếu từ hai ô trở lên thì chưa đủ dữ kiện để tính ra ô nào.
+  final TradeField? can;
+  if (oTrong.length == 1) {
+    can = oTrong.first;
+  } else if (oTrong.isEmpty) {
+    can = justEdited == TradeField.thanhTien
+        ? TradeField.donGia
+        : TradeField.thanhTien;
+  } else {
+    can = null;
+  }
+
+  if (can == null || can == justEdited) {
+    return (quantity: quantity, unitPrice: unitPrice, amount: amount);
+  }
+
+  return switch (can) {
+    TradeField.thanhTien => (
+        quantity: quantity,
+        unitPrice: unitPrice,
+        amount: quantity! * unitPrice!,
+      ),
+    TradeField.donGia => (
+        quantity: quantity,
+        unitPrice: amount! / quantity!,
+        amount: amount,
+      ),
+    TradeField.khoiLuong => (
+        quantity: amount! / unitPrice!,
+        unitPrice: unitPrice,
+        amount: amount,
+      ),
+  };
+}
+
 /// Nhóm giao dịch đang xem, theo tình trạng hoá đơn.
 enum _InvoiceFilter {
   tatCa('Tất cả', null),
@@ -549,16 +613,27 @@ class _TradeDialogState extends State<_TradeDialog> {
   late final _invoiceNo = TextEditingController(text: widget.trade?.invoiceNo ?? '');
   late final _note = TextEditingController(text: widget.trade?.note ?? '');
 
-  /// Nhân khối lượng với đơn giá điền sẵn vào ô tiền.
+  /// Gõ xong một ô thì điền lại ô suy ra được — xem [fillTradeMath].
   ///
-  /// Vẫn cho sửa lại: bớt giá cho khách hay mua khoản không có khối lượng thì
-  /// không nhân ra được.
-  void _autoAmount() {
-    final kl = parseNumber(_quantity.text) ?? 0;
-    final gia = parseNumber(_unitPrice.text) ?? 0;
-    if (kl > 0 && gia > 0) {
-      _amount.text = formatDecimal(kl * gia);
+  /// Chỉ ghi lại ô nào thực sự đổi số: gán thẳng vào [TextEditingController]
+  /// sẽ đẩy con trỏ về đầu dòng, đang gõ dở mà nhảy con trỏ thì không nhập nổi.
+  void _tinhLai(TradeField vuaGo) {
+    final ket = fillTradeMath(
+      quantity: parseNumber(_quantity.text),
+      unitPrice: parseNumber(_unitPrice.text),
+      amount: parseNumber(_amount.text),
+      justEdited: vuaGo,
+    );
+
+    void ghi(TextEditingController o, double? giaTri) {
+      if (giaTri == null) return;
+      final text = formatDecimal(giaTri);
+      if (o.text != text) o.text = text;
     }
+
+    if (vuaGo != TradeField.khoiLuong) ghi(_quantity, ket.quantity);
+    if (vuaGo != TradeField.donGia) ghi(_unitPrice, ket.unitPrice);
+    if (vuaGo != TradeField.thanhTien) ghi(_amount, ket.amount);
     setState(() {});
   }
 
@@ -584,7 +659,10 @@ class _TradeDialogState extends State<_TradeDialog> {
     final gia = parseNumber(_unitPrice.text) ?? 0;
     final tien = parseNumber(_amount.text) ?? 0;
     final nhanRa = kl > 0 && gia > 0 ? kl * gia : null;
-    final lech = nhanRa != null && (nhanRa - tien).abs() > 1;
+    // Nới theo tỷ lệ chứ không phải một đồng: đơn giá suy ngược từ thành tiền
+    // bị làm tròn khi hiện ra, nhân lại luôn lệch vài đồng — báo động vì mấy
+    // đồng đó thì lần nào cũng kêu, thành ra không ai đọc nữa.
+    final lech = nhanRa != null && (nhanRa - tien).abs() > tien.abs() * 0.0001 + 1;
 
     return AlertDialog(
       title: Text(widget.trade == null ? 'Ghi giao dịch' : 'Sửa giao dịch'),
@@ -682,7 +760,7 @@ class _TradeDialogState extends State<_TradeDialog> {
                             const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(
                             labelText: 'Khối lượng', suffixText: 'kg'),
-                        onChanged: (_) => _autoAmount(),
+                        onChanged: (_) => _tinhLai(TradeField.khoiLuong),
                       ),
                     ),
                     const SizedBox(width: AppTheme.gapSm),
@@ -693,7 +771,7 @@ class _TradeDialogState extends State<_TradeDialog> {
                             const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(
                             labelText: 'Đơn giá', suffixText: 'đ/kg'),
-                        onChanged: (_) => _autoAmount(),
+                        onChanged: (_) => _tinhLai(TradeField.donGia),
                       ),
                     ),
                   ],
@@ -707,13 +785,14 @@ class _TradeDialogState extends State<_TradeDialog> {
                     suffixText: 'đ',
                     helperText: lech
                         ? 'Khác với ${formatMoney(nhanRa)} đ nhân ra từ khối lượng × đơn giá'
-                        : 'Tự điền khi nhập khối lượng và đơn giá; sửa lại được',
+                        : 'Nhập 2 trong 3 ô, ô còn lại tự tính. Sửa thành tiền thì '
+                            'đơn giá tính lại, khối lượng giữ nguyên.',
                     helperStyle: lech
                         ? const TextStyle(
                             color: AppTheme.accent, fontWeight: FontWeight.w600)
                         : null,
                   ),
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) => _tinhLai(TradeField.thanhTien),
                   validator: (v) {
                     final n = parseNumber(v);
                     if (n == null || n < 0) return 'Nhập số tiền';
