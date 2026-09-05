@@ -1,96 +1,96 @@
 import 'package:canxe_app/screens/trade_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Kiểm thử luật tính thành tiền trong sổ mua bán.
+/// Kiểm thử phép tính ba ô của sổ mua bán: khối lượng × đơn giá = thành tiền.
 ///
 /// Đây là chỗ ra con số tiền ghi vào sổ, nên sai một luật là ghi sai tiền mà
 /// không ai phát hiện cho tới lúc đối chiếu cuối kỳ.
 void main() {
-  ({double? quantity, double? unitPrice, double? amount}) tinh({
-    double? kl,
-    double? gia,
-    double? tien,
-    required TradeField vuaGo,
-  }) =>
-      fillTradeMath(
+  double? tinh(TradeField can, {double? kl, double? gia, double? tien}) =>
+      computeTradeField(
+        target: can,
         quantity: kl,
         unitPrice: gia,
         amount: tien,
-        justEdited: vuaGo,
       );
 
-  group('Thành tiền = đơn giá × khối lượng', () {
-    test('có đủ hai ô thì tính ra tiền', () {
-      final r = tinh(kl: 7630, gia: 95000, vuaGo: TradeField.donGia);
-      expect(r.amount, 724850000);
-      expect(r.quantity, 7630);
-      expect(r.unitPrice, 95000);
+  group('Nhập hai ô thì ra ô thứ ba', () {
+    test('khối lượng và đơn giá ra thành tiền', () {
+      expect(tinh(TradeField.thanhTien, kl: 7630, gia: 95000), 724850000);
     });
 
-    test('sửa khối lượng thì tiền tính lại', () {
-      final r = tinh(kl: 8000, gia: 95000, tien: 724850000, vuaGo: TradeField.khoiLuong);
-      expect(r.amount, 760000000);
-      expect(r.unitPrice, 95000, reason: 'đơn giá là số người ta nhập, không tự đổi');
+    test('thành tiền và đơn giá ra khối lượng', () {
+      // Đúng bộ số từng cho ra 0,03 vì máy tính từ số gõ dở dang.
+      expect(tinh(TradeField.khoiLuong, tien: 5243000, gia: 1500), 3495);
     });
 
-    test('sửa đơn giá thì tiền tính lại', () {
-      final r = tinh(kl: 7630, gia: 90000, tien: 724850000, vuaGo: TradeField.donGia);
-      expect(r.amount, 686700000);
-      expect(r.quantity, 7630);
-    });
-
-    test('tiền luôn tròn đồng, không có phần lẻ', () {
-      final r = tinh(kl: 1.5, gia: 95001, vuaGo: TradeField.khoiLuong);
-      expect(r.amount, 142502, reason: '142.501,5 làm tròn thành 142.502');
-      expect(r.amount! % 1, 0);
+    test('thành tiền và khối lượng ra đơn giá', () {
+      expect(tinh(TradeField.donGia, tien: 5243000, kl: 3495), 1500);
     });
   });
 
-  group('Không tính ngược, không đoán', () {
-    test('sửa thành tiền thì không đụng khối lượng lẫn đơn giá', () {
-      // Bớt giá cho khách hay làm tròn lúc chốt: người ta cố ý ghi số khác
-      // phép nhân, tự sửa hai ô kia là ghi đè lên số họ vừa nhập.
-      final r = tinh(kl: 7630, gia: 95000, tien: 720000000, vuaGo: TradeField.thanhTien);
-      expect(r.quantity, 7630);
-      expect(r.unitPrice, 95000);
-      expect(r.amount, 720000000);
+  group('Luôn ra số tròn', () {
+    test('không có phần lẻ dưới đồng hay dưới ký', () {
+      for (final v in [
+        tinh(TradeField.khoiLuong, tien: 5243000, gia: 1500),
+        tinh(TradeField.donGia, tien: 720000000, kl: 7630),
+        tinh(TradeField.thanhTien, kl: 1.5, gia: 95001),
+      ]) {
+        expect(v, isNotNull);
+        expect(v! % 1, 0, reason: 'không ai ghi sổ số lẻ tới hào');
+      }
     });
 
-    test('có tiền và khối lượng cũng không suy ra đơn giá', () {
-      // Chia ngược ra số lẻ tới hào, không ai ghi đơn giá cà phê như vậy.
-      final r = tinh(kl: 7630, tien: 720000000, vuaGo: TradeField.thanhTien);
-      expect(r.unitPrice, isNull);
+    test('5.243.000 chia 1.500 làm tròn thành 3.495', () {
+      // 3.495,333… — làm tròn xuống.
+      expect(tinh(TradeField.khoiLuong, tien: 5243000, gia: 1500), 3495);
     });
 
-    test('có tiền và đơn giá cũng không suy ra khối lượng', () {
-      final r = tinh(gia: 95000, tien: 720000000, vuaGo: TradeField.thanhTien);
-      expect(r.quantity, isNull);
-    });
-
-    test('mới có một ô thì giữ nguyên', () {
-      final r = tinh(kl: 7630, vuaGo: TradeField.khoiLuong);
-      expect(r.unitPrice, isNull);
-      expect(r.amount, isNull);
-    });
-
-    test('trống trơn thì giữ nguyên', () {
-      final r = tinh(vuaGo: TradeField.khoiLuong);
-      expect(r.quantity, isNull);
-      expect(r.unitPrice, isNull);
-      expect(r.amount, isNull);
-    });
-
-    test('số 0 và số âm coi như chưa nhập', () {
-      expect(tinh(kl: 0, gia: 95000, vuaGo: TradeField.donGia).amount, isNull);
-      expect(tinh(kl: -5, gia: 95000, vuaGo: TradeField.donGia).amount, isNull);
+    test('720.000.000 chia 7.630 làm tròn thành 94.364', () {
+      // 94.364,3512…
+      expect(tinh(TradeField.donGia, tien: 720000000, kl: 7630), 94364);
     });
   });
 
-  test('khoản không có khối lượng vẫn ghi được thành tiền', () {
-    // Tiền dầu, tiền công bốc vác: chỉ có số tiền, không nhân ra từ đâu.
-    final r = tinh(tien: 12000000, vuaGo: TradeField.thanhTien);
-    expect(r.amount, 12000000);
-    expect(r.quantity, isNull);
-    expect(r.unitPrice, isNull);
+  group('Thiếu dữ kiện thì không đoán', () {
+    test('thiếu một trong hai ô nguồn thì trả null', () {
+      expect(tinh(TradeField.thanhTien, kl: 7630), isNull);
+      expect(tinh(TradeField.donGia, tien: 5243000), isNull);
+      expect(tinh(TradeField.khoiLuong, gia: 1500), isNull);
+    });
+
+    test('trống trơn thì trả null', () {
+      for (final can in TradeField.values) {
+        expect(tinh(can), isNull);
+      }
+    });
+
+    test('số 0 coi như chưa nhập, không chia cho 0', () {
+      expect(tinh(TradeField.khoiLuong, tien: 5243000, gia: 0), isNull);
+      expect(tinh(TradeField.donGia, tien: 5243000, kl: 0), isNull);
+    });
+
+    test('số âm cũng coi như chưa nhập', () {
+      expect(tinh(TradeField.thanhTien, kl: -5, gia: 1500), isNull);
+    });
+  });
+
+  group('Số viết vào ô nhập', () {
+    test('không có dấu phân cách hàng nghìn', () {
+      // Điền "5.243.000" rồi gõ thêm một chữ số là thành "5.243.0001", đọc ra
+      // 5.243 chứ không phải hơn năm triệu.
+      expect(soVaoO(5243000), '5243000');
+      expect(soVaoO(3495), '3495');
+      expect(soVaoO(724850000), '724850000');
+    });
+
+    test('số nguyên không kèm ",0" thừa', () {
+      expect(soVaoO(1500), '1500');
+      expect(soVaoO(0), '0');
+    });
+
+    test('giữ phần lẻ nếu dữ liệu cũ có', () {
+      expect(soVaoO(7.5), '7.5');
+    });
   });
 }

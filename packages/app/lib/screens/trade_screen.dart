@@ -9,36 +9,42 @@ import '../state/server_connection.dart';
 /// Ba ô ràng buộc nhau bởi phép nhân: khối lượng × đơn giá = thành tiền.
 enum TradeField { khoiLuong, donGia, thanhTien }
 
-/// Tính **thành tiền** từ khối lượng và đơn giá.
+/// Tính ô [target] từ hai ô còn lại. `null` nghĩa là chưa đủ dữ kiện.
 ///
-/// Chỉ tính một chiều. Tính ngược (lấy tiền chia ra đơn giá hay khối lượng) thì
-/// hầu như lần nào cũng ra số lẻ vô hạn — 720.000.000 chia 7.630 kg ra
-/// 94.364,3512… — mà cà phê thì không ai ghi đơn giá lẻ tới hào.
+/// Kết quả **luôn tròn số**: tiền Việt không có phần lẻ dưới đồng, và chia
+/// ngược ra khối lượng hay đơn giá thì hầu như lần nào cũng ra số lẻ vô hạn
+/// (5.243.000 chia 1.500 ra 3.495,333…) — không ai ghi vào sổ như vậy.
 ///
-/// - Có đủ khối lượng và đơn giá → thành tiền tính ra, làm tròn tới đồng.
-/// - Sửa **thành tiền** → không đụng vào hai ô kia. Đó là lúc người ta cố ý ghi
-///   khác phép nhân (bớt giá, làm tròn lúc chốt); ô thành tiền sẽ báo lệch bao
-///   nhiêu so với phép nhân để họ tự quyết.
-/// - Thiếu một trong hai ô kia → để yên, không đoán.
-({double? quantity, double? unitPrice, double? amount}) fillTradeMath({
+/// Làm tròn khiến ba ô lệch nhau vài trăm đồng; ô thành tiền có dòng báo lệch
+/// bao nhiêu so với phép nhân để người dùng tự chỉnh nếu cần.
+double? computeTradeField({
+  required TradeField target,
   required double? quantity,
   required double? unitPrice,
   required double? amount,
-  required TradeField justEdited,
 }) {
-  final giuNguyen = (quantity: quantity, unitPrice: unitPrice, amount: amount);
+  bool co(double? v) => v != null && v > 0;
 
-  if (justEdited == TradeField.thanhTien) return giuNguyen;
-  if (quantity == null || quantity <= 0) return giuNguyen;
-  if (unitPrice == null || unitPrice <= 0) return giuNguyen;
-
-  return (
-    quantity: quantity,
-    unitPrice: unitPrice,
-    // Tiền Việt không có phần lẻ dưới đồng.
-    amount: (quantity * unitPrice).roundToDouble(),
-  );
+  return switch (target) {
+    TradeField.thanhTien => co(quantity) && co(unitPrice)
+        ? (quantity! * unitPrice!).roundToDouble()
+        : null,
+    TradeField.donGia =>
+      co(amount) && co(quantity) ? (amount! / quantity!).roundToDouble() : null,
+    TradeField.khoiLuong =>
+      co(amount) && co(unitPrice) ? (amount! / unitPrice!).roundToDouble() : null,
+  };
 }
+
+/// Viết một con số vào ô nhập — **không có dấu phân cách hàng nghìn**.
+///
+/// Ô nhập phải giữ số trần. Điền sẵn "5.243.000" rồi người dùng gõ thêm một
+/// chữ số là thành "5.243.0001", và luật đọc số hiểu dấu chấm cuối cùng có 4
+/// chữ số đứng sau là dấu thập phân — ra 5.243 thay vì hơn năm triệu. Dấu chấm
+/// chỉ dùng lúc **hiện ra** ở danh sách và ô tổng, không dùng trong ô nhập.
+String soVaoO(double value) => value == value.roundToDouble()
+    ? value.toStringAsFixed(0)
+    : value.toString();
 
 /// Nhóm giao dịch đang xem, theo tình trạng hoá đơn.
 enum _InvoiceFilter {
@@ -575,35 +581,55 @@ class _TradeDialogState extends State<_TradeDialog> {
   late final _goodsName = TextEditingController(text: widget.trade?.goodsName ?? '');
   late final _partnerName = TextEditingController(text: widget.trade?.partnerName ?? '');
   late final _quantity = TextEditingController(
-      text: (widget.trade?.quantity ?? 0) > 0 ? formatDecimal(widget.trade!.quantity) : '');
+      text: (widget.trade?.quantity ?? 0) > 0 ? soVaoO(widget.trade!.quantity) : '');
   late final _unitPrice = TextEditingController(
-      text: (widget.trade?.unitPrice ?? 0) > 0 ? formatDecimal(widget.trade!.unitPrice) : '');
+      text: (widget.trade?.unitPrice ?? 0) > 0 ? soVaoO(widget.trade!.unitPrice) : '');
   late final _amount = TextEditingController(
-      text: widget.trade == null ? '' : formatDecimal(widget.trade!.amount));
+      text: widget.trade == null ? '' : soVaoO(widget.trade!.amount));
+
+  /// Hai ô người dùng gõ gần đây nhất; ô còn lại là ô được tính.
+  ///
+  /// Nhớ theo người gõ chứ không theo ô nào đang trống, nếu không thì đang gõ
+  /// dở ô này máy lại đổi sang tính ô khác: gõ "5243000" vào thành tiền, mấy
+  /// phím đầu khối lượng còn trống nên nó tính khối lượng từ số dở dang
+  /// (52 ÷ 1500 = 0,03), gõ tiếp thì cả ba ô đã có số, nó quay sang tính đơn
+  /// giá và bỏ mặc khối lượng đứng ở 0,03.
+  ///
+  /// Mở sẵn giao dịch cũ thì coi như vừa gõ khối lượng và đơn giá, nên sửa một
+  /// trong hai ô đó là thành tiền tính lại ngay.
+  final List<TradeField> _daGo = [TradeField.khoiLuong, TradeField.donGia];
   late final _invoiceNo = TextEditingController(text: widget.trade?.invoiceNo ?? '');
   late final _note = TextEditingController(text: widget.trade?.note ?? '');
 
-  /// Gõ xong một ô thì điền lại ô suy ra được — xem [fillTradeMath].
-  ///
-  /// Chỉ ghi lại ô nào thực sự đổi số: gán thẳng vào [TextEditingController]
-  /// sẽ đẩy con trỏ về đầu dòng, đang gõ dở mà nhảy con trỏ thì không nhập nổi.
+  /// Gõ xong một ô thì tính lại ô còn lại — xem [computeTradeField].
   void _tinhLai(TradeField vuaGo) {
-    final ket = fillTradeMath(
+    // Ô vừa gõ luôn nằm trong hai ô "người dùng nhập"; ô bị đẩy ra là ô tính.
+    _daGo
+      ..remove(vuaGo)
+      ..add(vuaGo);
+    if (_daGo.length > 2) _daGo.removeAt(0);
+
+    final can = TradeField.values.firstWhere((f) => !_daGo.contains(f));
+    final giaTri = computeTradeField(
+      target: can,
       quantity: parseNumber(_quantity.text),
       unitPrice: parseNumber(_unitPrice.text),
       amount: parseNumber(_amount.text),
-      justEdited: vuaGo,
     );
-
-    void ghi(TextEditingController o, double? giaTri) {
-      if (giaTri == null) return;
-      final text = formatDecimal(giaTri);
-      if (o.text != text) o.text = text;
+    if (giaTri == null) {
+      setState(() {});
+      return;
     }
 
-    if (vuaGo != TradeField.khoiLuong) ghi(_quantity, ket.quantity);
-    if (vuaGo != TradeField.donGia) ghi(_unitPrice, ket.unitPrice);
-    if (vuaGo != TradeField.thanhTien) ghi(_amount, ket.amount);
+    final o = switch (can) {
+      TradeField.khoiLuong => _quantity,
+      TradeField.donGia => _unitPrice,
+      TradeField.thanhTien => _amount,
+    };
+    // Chỉ ghi khi số thực sự đổi: gán thẳng vào controller sẽ đẩy con trỏ về
+    // đầu dòng, đang gõ dở mà nhảy con trỏ thì không nhập nổi.
+    final text = soVaoO(giaTri);
+    if (o.text != text) o.text = text;
     setState(() {});
   }
 
@@ -755,8 +781,7 @@ class _TradeDialogState extends State<_TradeDialog> {
                     suffixText: 'đ',
                     helperText: lech
                         ? 'Khác với ${formatMoney(nhanRa)} đ nhân ra từ khối lượng × đơn giá'
-                        : 'Tự tính từ khối lượng × đơn giá. Sửa lại được khi '
-                            'bớt giá hay làm tròn lúc chốt.',
+                        : 'Nhập 2 trong 3 ô, ô còn lại tự tính ra số tròn.',
                     helperStyle: lech
                         ? const TextStyle(
                             color: AppTheme.accent, fontWeight: FontWeight.w600)
