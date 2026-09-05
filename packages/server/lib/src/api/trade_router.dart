@@ -2,22 +2,19 @@ import 'package:canxe_shared/canxe_shared.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
-import '../config.dart';
 import '../service/trade_service.dart';
 
 /// Các đường dẫn API của **sổ mua bán**.
 ///
-/// Hai lớp chặn, cả hai đều nằm ở đây chứ không rải trong từng đường dẫn:
+/// Một lớp chặn duy nhất, đặt ở đây chứ không rải trong từng đường dẫn: **chỉ
+/// tài khoản chủ**. Không phải "quản lý tổng" — giá mua vào là thứ riêng của
+/// chủ, quản lý tổng vẫn làm mọi việc khác như cũ.
 ///
-/// - **Chỉ tài khoản chủ.** Không phải "quản lý tổng" — giá mua vào là thứ
-///   riêng của chủ, quản lý tổng vẫn làm mọi việc khác như cũ.
-/// - **Chỉ máy chủ trung tâm.** Sổ này không đi kèm gói đồng bộ, nên nếu mở
-///   được ở máy trạm thì dữ liệu ghi ra sẽ nằm lại đó một mình. Chặn thẳng và
-///   nói rõ lý do còn hơn để người dùng ghi vào chỗ không ai thấy.
+/// Máy chủ nào cũng mở được sổ: dữ liệu đi kèm gói đồng bộ nên trung tâm và các
+/// kho thấy chung một quyển.
 class TradeRouter {
   TradeRouter({
     required this.service,
-    required this.config,
     required this.json,
     required this.error,
     required this.guard,
@@ -26,7 +23,6 @@ class TradeRouter {
   });
 
   final TradeService service;
-  final ServerConfig config;
 
   final Response Function(Object? data) json;
   final Response Function(String message, int status) error;
@@ -104,15 +100,8 @@ class TradeRouter {
     return n > 0 ? n : null;
   }
 
-  /// Trả về phản hồi từ chối nếu không được phép, `null` nếu qua cả hai lớp.
+  /// Trả về phản hồi từ chối nếu không được phép, `null` nếu được.
   Response? _chan(Request request) {
-    if (config.role != ServerRole.central) {
-      return error(
-        'Sổ mua bán chỉ có trên máy chủ trung tâm. Dữ liệu này không đồng bộ '
-        'xuống kho, nên phải mở app bằng địa chỉ của máy trung tâm.',
-        409,
-      );
-    }
     if (!user(request).isOwner) {
       return error('Sổ mua bán chỉ dành cho tài khoản chủ.', 403);
     }

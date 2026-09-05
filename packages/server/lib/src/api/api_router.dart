@@ -456,7 +456,6 @@ class ApiRouter {
 
     TradeRouter(
       service: trades,
-      config: config,
       json: _json,
       error: _error,
       guard: _guard,

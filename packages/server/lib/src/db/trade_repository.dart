@@ -5,9 +5,11 @@ import 'database.dart';
 
 /// Truy cập **sổ mua bán**.
 ///
-/// Cố ý tách khỏi [Repository] và **không có mặt trong luồng đồng bộ**: giá mua
-/// vào là dữ liệu nhạy cảm nhất của cả hệ thống, đẩy nó xuống máy ở kho là mỗi
-/// kho có một bản sao trên ổ cứng. Sổ này chỉ sống trên máy chủ trung tâm.
+/// Tách khỏi [Repository] cho mỗi file một việc, nhưng vẫn **đi kèm luồng đồng
+/// bộ**: mở app ở máy nào cũng phải thấy chung một quyển sổ, chứ ghi ở kho rồi
+/// mở trung tâm không thấy thì thành mỗi máy một quyển.
+///
+/// Quyền xem chặn ở API (chỉ tài khoản chủ), không phải ở chỗ dữ liệu nằm đâu.
 class TradeRepository {
   TradeRepository(this._appDb);
 
@@ -72,12 +74,12 @@ class TradeRepository {
     return rows.isEmpty ? null : Trade.fromJson(rows.first);
   }
 
-  Trade upsertTrade(Trade trade) {
+  Trade upsertTrade(Trade trade, {bool dirty = true}) {
     _db.execute('''
       INSERT INTO giao_dich (id, date, kind, goods_type_id, goods_name, partner_id,
         partner_name, quantity, unit, unit_price, amount, has_invoice, invoice_no,
         note, created_by, updated_at, deleted, dirty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         date = excluded.date, kind = excluded.kind,
         goods_type_id = excluded.goods_type_id, goods_name = excluded.goods_name,
@@ -86,7 +88,7 @@ class TradeRepository {
         unit_price = excluded.unit_price, amount = excluded.amount,
         has_invoice = excluded.has_invoice, invoice_no = excluded.invoice_no,
         note = excluded.note, updated_at = excluded.updated_at,
-        deleted = excluded.deleted
+        deleted = excluded.deleted, dirty = excluded.dirty
       WHERE excluded.updated_at >= giao_dich.updated_at
     ''', [
       trade.id,
@@ -106,14 +108,17 @@ class TradeRepository {
       trade.createdBy,
       timeToMillis(trade.updatedAt),
       trade.deleted ? 1 : 0,
+      dirty ? 1 : 0,
     ]);
     return tradeById(trade.id) ?? trade;
   }
 
   /// Xoá mềm — sổ tiền không xoá hẳn bao giờ, còn phải tra lại được.
+  ///
+  /// Đánh dấu chờ đẩy luôn, nếu không thì bên kia vẫn giữ bản chưa xoá.
   void softDelete(String id) {
     _db.execute(
-      'UPDATE giao_dich SET deleted = 1, updated_at = ? WHERE id = ?',
+      'UPDATE giao_dich SET deleted = 1, dirty = 1, updated_at = ? WHERE id = ?',
       [timeToMillis(DateTime.now()), id],
     );
   }

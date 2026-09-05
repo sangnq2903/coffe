@@ -310,20 +310,76 @@ void main() {
   group('Trên máy trạm', () {
     setUp(() => dungMayChu(ServerRole.station));
 
-    test('sổ mua bán bị chặn hẳn, kể cả với tài khoản chủ', () async {
-      // Sổ này không đồng bộ xuống kho; mở được ở đây thì dữ liệu ghi ra sẽ
-      // nằm lại một mình trên máy kho, không ai thấy.
-      final res = await call('GET', '/api/giao-dich', token: tokenChu);
-      final text = await res.readAsString();
-      expect(res.statusCode, 409);
-      expect(text, contains('máy chủ trung tâm'));
+    test('mở được như ở trung tâm, vẫn chỉ chủ mới vào', () async {
+      // Máy chủ nào cũng thấy sổ; dữ liệu đi kèm gói đồng bộ nên trung tâm và
+      // các kho dùng chung một quyển.
+      expect((await call('GET', '/api/giao-dich', token: tokenChu)).statusCode, 200);
+      await post('/api/giao-dich', {
+        'date': ngay(2026, 9, 5),
+        'kind': 'mua_vao',
+        'goods_name': 'Cà tươi',
+        'amount': 5000000,
+      });
+      expect(((await soMuaBan())['items'] as List).length, 1);
 
-      expect(
-        (await call('POST', '/api/giao-dich',
-                token: tokenChu, body: {'date': ngay(2026, 9, 5), 'amount': 1000}))
-            .statusCode,
-        409,
-      );
+      expect((await call('GET', '/api/giao-dich', token: tokenTong)).statusCode, 403);
+      expect((await call('GET', '/api/giao-dich', token: tokenTram)).statusCode, 403);
+    });
+  });
+
+  group('Đồng bộ', () {
+    setUp(() => dungMayChu(ServerRole.central));
+
+    test('giao dịch đi kèm gói đồng bộ và đếm vào số chờ đẩy', () async {
+      await post('/api/giao-dich', {
+        'date': ngay(2026, 9, 5),
+        'kind': 'mua_vao',
+        'goods_name': 'Cà nhân',
+        'amount': 724850000,
+        'has_invoice': true,
+      });
+
+      final goi = repo.changesSince(null);
+      expect(goi.trades.length, 1);
+      expect(goi.trades.single.amount, 724850000);
+      expect(goi.trades.single.hasInvoice, isTrue);
+
+      // Ghi ở máy này thì phải chờ đẩy sang bên kia.
+      expect(repo.dirtyChanges().trades.length, 1);
+      expect(repo.pendingPushCount(), greaterThan(0));
+    });
+
+    test('nhận gói từ bên kia thì ghi vào sổ và không đẩy ngược lại', () async {
+      final goiDen = SyncPayload(trades: [
+        Trade.create(
+          date: DateTime(2026, 9, 6),
+          kind: TradeKind.banRa,
+          goodsName: 'Cà khô',
+          amount: 310000000,
+        ),
+      ]);
+
+      expect(repo.applyPayload(goiDen), 1);
+      expect(((await soMuaBan())['items'] as List).length, 1);
+      // Bản vừa nhận không được đánh dấu chờ đẩy, nếu không hai máy đẩy qua
+      // đẩy lại mãi.
+      expect(repo.dirtyChanges().trades, isEmpty);
+    });
+
+    test('xoá rồi thì việc xoá cũng đi sang bên kia', () async {
+      final gd = await post('/api/giao-dich', {
+        'date': ngay(2026, 9, 5),
+        'goods_name': 'Nhầm',
+        'amount': 1000,
+      });
+      repo.clearDirty(repo.dirtyChanges());
+      expect(repo.dirtyChanges().trades, isEmpty);
+
+      await call('DELETE', '/api/giao-dich/${gd['id']}', token: tokenChu);
+
+      final choDay = repo.dirtyChanges().trades;
+      expect(choDay.length, 1, reason: 'xoá xong phải đẩy đi, không thì bên kia vẫn giữ');
+      expect(choDay.single.deleted, isTrue);
     });
   });
 

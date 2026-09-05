@@ -502,12 +502,14 @@ thì tài khoản người thật cũ nhất được gắn cờ khi nâng cấp
 Giấu mục trong thanh điều hướng chỉ là cho gọn mắt; **máy chủ mới là chỗ chặn
 thật** — mọi đường dẫn của sổ đều từ chối tài khoản không phải chủ.
 
-### Chỉ nằm trên máy chủ trung tâm
+### Máy chủ nào cũng mở được
 
-Sổ mua bán **không có mặt trong luồng đồng bộ**. Giá mua vào là dữ liệu nhạy cảm
-nhất của cả hệ thống; đẩy xuống kho là mỗi máy ở kho có một bản sao trên ổ cứng.
-Mở app bằng địa chỉ máy trạm thì sổ báo lỗi rõ ràng thay vì cho ghi vào chỗ
-không ai thấy.
+Sổ đi kèm gói đồng bộ như mọi bảng khác, nên trung tâm và các kho dùng **chung
+một quyển**: ghi ở kho thì mở trung tâm cũng thấy, và ngược lại.
+
+Đổi lại, giá mua bán có mặt trên ổ cứng của mọi máy chủ. Quyền xem chặn ở API
+theo tài khoản, **không** theo chỗ dữ liệu nằm — ai cầm được file cơ sở dữ liệu
+của một máy kho là đọc được sổ.
 
 ### Một dòng ghi những gì
 

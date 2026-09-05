@@ -17,8 +17,7 @@ class Repository {
   /// Phần dữ liệu của module chấm công.
   final PayrollRepository payroll;
 
-  /// Sổ mua bán. Cố ý **không** có mặt trong [changesSince] hay [dirtyChanges]:
-  /// dữ liệu này chỉ sống trên máy chủ trung tâm, không đồng bộ xuống kho.
+  /// Sổ mua bán. Đồng bộ như mọi bảng khác — xem [changesSince].
   final TradeRepository trades;
 
   Database get _db => _appDb.db;
@@ -491,6 +490,9 @@ class Repository {
       vehicles: load('vehicles', Vehicle.fromJson),
       goodsTypes: load('goods_types', GoodsType.fromJson),
       tickets: load('tickets', WeighTicket.fromJson, byStation: true),
+      // Sổ mua bán không cắt theo kho: nó là sổ của cả công ty, và quyền xem
+      // đã chặn ở API theo tài khoản chứ không theo nơi dữ liệu nằm.
+      trades: load('giao_dich', Trade.fromJson),
       payroll: payroll.changesSince(since, limit: limit),
       serverTime: DateTime.now(),
     );
@@ -509,13 +511,21 @@ class Repository {
       vehicles: load('vehicles', Vehicle.fromJson),
       goodsTypes: load('goods_types', GoodsType.fromJson),
       tickets: load('tickets', WeighTicket.fromJson),
+      trades: load('giao_dich', Trade.fromJson),
       payroll: payroll.dirtyChanges(limit: limit),
     );
   }
 
   int pendingPushCount() {
     var total = 0;
-    for (final table in ['nguoi_dung', 'customers', 'vehicles', 'goods_types', 'tickets']) {
+    for (final table in [
+      'nguoi_dung',
+      'customers',
+      'vehicles',
+      'goods_types',
+      'tickets',
+      'giao_dich',
+    ]) {
       total += _db.select('SELECT COUNT(*) AS c FROM $table WHERE dirty = 1').first['c'] as int;
     }
     return total + payroll.pendingPushCount();
@@ -548,6 +558,10 @@ class Repository {
         upsertTicket(t, dirty: markDirty);
         applied++;
       }
+      for (final t in payload.trades) {
+        trades.upsertTrade(t, dirty: markDirty);
+        applied++;
+      }
       applied += payroll.applyPayload(payload.payroll, markDirty: markDirty);
     });
     return applied;
@@ -567,6 +581,7 @@ class Repository {
       clear('vehicles', pushed.vehicles.map((e) => e.id));
       clear('goods_types', pushed.goodsTypes.map((e) => e.id));
       clear('tickets', pushed.tickets.map((e) => e.id));
+      clear('giao_dich', pushed.trades.map((e) => e.id));
       payroll.clearDirty(pushed.payroll);
     });
   }

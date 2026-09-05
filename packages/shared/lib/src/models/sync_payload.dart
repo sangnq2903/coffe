@@ -7,6 +7,7 @@ import 'payroll/payroll_entry.dart';
 import 'payroll/wage.dart';
 import 'payroll/worker.dart';
 import 'goods_type.dart';
+import 'trade.dart';
 import 'vehicle.dart';
 import 'weigh_ticket.dart';
 
@@ -21,6 +22,7 @@ class SyncPayload {
     this.vehicles = const [],
     this.goodsTypes = const [],
     this.tickets = const [],
+    this.trades = const [],
     this.payroll = const PayrollSyncData(),
     this.serverTime,
   });
@@ -33,6 +35,7 @@ class SyncPayload {
         goodsTypes:
             asMapList(json['goods_types']).map(GoodsType.fromJson).toList(),
         tickets: asMapList(json['tickets']).map(WeighTicket.fromJson).toList(),
+        trades: asMapList(json['trades']).map(Trade.fromJson).toList(),
         payroll: PayrollSyncData.fromJson(
           (json['payroll'] as Map?)?.cast<String, Object?>() ?? const {},
         ),
@@ -50,6 +53,14 @@ class SyncPayload {
   final List<GoodsType> goodsTypes;
   final List<WeighTicket> tickets;
 
+  /// Sổ mua bán.
+  ///
+  /// Đi kèm gói đồng bộ như mọi bảng khác, để mở app ở máy nào cũng thấy chung
+  /// một quyển sổ. Đổi lại, giá mua bán có mặt trên ổ cứng của mọi máy chủ —
+  /// quyền xem vẫn chặn ở API, nhưng ai cầm được file cơ sở dữ liệu là đọc
+  /// được.
+  final List<Trade> trades;
+
   /// Dữ liệu module chấm công.
   final PayrollSyncData payroll;
 
@@ -63,6 +74,7 @@ class SyncPayload {
       vehicles.isEmpty &&
       goodsTypes.isEmpty &&
       tickets.isEmpty &&
+      trades.isEmpty &&
       payroll.isEmpty;
 
   int get totalRecords =>
@@ -71,6 +83,7 @@ class SyncPayload {
       vehicles.length +
       goodsTypes.length +
       tickets.length +
+      trades.length +
       payroll.totalRecords;
 
   Map<String, Object?> toJson() => {
@@ -79,6 +92,7 @@ class SyncPayload {
         'vehicles': vehicles.map((e) => e.toJson()).toList(),
         'goods_types': goodsTypes.map((e) => e.toJson()).toList(),
         'tickets': tickets.map((e) => e.toJson()).toList(),
+        'trades': trades.map((e) => e.toJson()).toList(),
         'payroll': payroll.toJson(),
         'server_time': timeToMillisOrNull(serverTime),
       };
