@@ -11,14 +11,18 @@ enum TradeField { khoiLuong, donGia, thanhTien }
 
 /// Điền ô còn thiếu từ hai ô đã có.
 ///
-/// Nhập hai trong ba ô là ô thứ ba tính ra được. Khi cả ba đều đã có số thì ô
-/// vừa gõ luôn được giữ nguyên, và ô nào tính lại thì theo lẽ thường của việc
-/// mua bán:
+/// Luật gốc: **thành tiền = đơn giá × khối lượng**. Thành tiền là con số suy ra,
+/// hai ô kia là số người ta nhập vào.
 ///
-/// - Sửa **khối lượng** hoặc **đơn giá** → tính lại **thành tiền**.
-/// - Sửa **thành tiền** → tính lại **đơn giá**, không đụng khối lượng. Khối
-///   lượng là số cân được, còn đơn giá mới là thứ thay đổi khi bớt giá cho
-///   khách hay làm tròn tiền lúc chốt.
+/// - Thiếu đúng một ô → tính ô đó ra. Nhờ vậy nhập hai ô bất kỳ đều đủ: có
+///   thành tiền và khối lượng thì ra đơn giá, có thành tiền và đơn giá thì ra
+///   khối lượng.
+/// - Đã đủ cả ba, sửa **khối lượng** hoặc **đơn giá** → thành tiền tính lại
+///   theo phép nhân.
+/// - Đã đủ cả ba, sửa **thành tiền** → **không đụng vào hai ô kia**. Đó là lúc
+///   người ta cố ý ghi một số khác phép nhân (bớt giá, làm tròn lúc chốt); tự
+///   sửa đơn giá theo là ghi đè lên số họ vừa nhập. Ô thành tiền sẽ báo lệch
+///   bao nhiêu so với phép nhân để họ tự quyết.
 ///
 /// Ô người dùng vừa gõ không bao giờ bị ghi đè, kể cả khi họ xoá trắng nó.
 ({double? quantity, double? unitPrice, double? amount}) fillTradeMath({
@@ -39,10 +43,8 @@ enum TradeField { khoiLuong, donGia, thanhTien }
   final TradeField? can;
   if (oTrong.length == 1) {
     can = oTrong.first;
-  } else if (oTrong.isEmpty) {
-    can = justEdited == TradeField.thanhTien
-        ? TradeField.donGia
-        : TradeField.thanhTien;
+  } else if (oTrong.isEmpty && justEdited != TradeField.thanhTien) {
+    can = TradeField.thanhTien;
   } else {
     can = null;
   }

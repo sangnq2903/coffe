@@ -52,14 +52,21 @@ void main() {
       expect(r.quantity, 7630);
     });
 
-    test('sửa thành tiền thì đơn giá tính lại, khối lượng giữ nguyên', () {
-      // Bớt giá cho khách: cân được bao nhiêu là chuyện đã rồi, chỉ có giá
-      // thực nhận thay đổi.
+    test('sửa thành tiền thì không đụng khối lượng lẫn đơn giá', () {
+      // Bớt giá cho khách hay làm tròn lúc chốt: người ta cố ý ghi số khác
+      // phép nhân, tự sửa đơn giá theo là ghi đè lên số họ vừa nhập.
       final r = tinh(kl: 7630, gia: 95000, tien: 720000000, vuaGo: TradeField.thanhTien);
-      expect(r.quantity, 7630, reason: 'khối lượng là số cân được, không suy từ tiền');
-      expect(r.unitPrice, closeTo(720000000 / 7630, 1e-9));
+      expect(r.quantity, 7630);
+      expect(r.unitPrice, 95000);
       expect(r.amount, 720000000);
     });
+  });
+
+  test('thành tiền luôn là con số suy ra từ đơn giá × khối lượng', () {
+    for (final (kl, gia) in [(7630.0, 95000.0), (0.5, 100.0), (1.0, 1.0)]) {
+      final r = tinh(kl: kl, gia: gia, vuaGo: TradeField.khoiLuong);
+      expect(r.amount, kl * gia);
+    }
   });
 
   group('Không đủ dữ kiện thì không tính bừa', () {
