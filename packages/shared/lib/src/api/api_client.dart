@@ -267,6 +267,13 @@ class ApiClient {
         if (note != null) 'note': note,
       }));
 
+  /// Xoá hẳn một phiếu khỏi danh sách.
+  ///
+  /// Khác với [cancelTicket]: huỷ thì phiếu vẫn nằm trong sổ với trạng thái đã
+  /// huỷ để còn tra lại, xoá thì biến mất. Chỉ dùng khi phiếu lập nhầm hoàn
+  /// toàn — cân sai, bấm nhầm nút.
+  Future<void> deleteTicket(String id) => _delete('/api/tickets/$id');
+
   Future<WeighTicket> cancelTicket(String id, {String? reason}) async =>
       WeighTicket.fromJson(await _postMap('/api/tickets/$id/cancel', {
         if (reason != null) 'reason': reason,

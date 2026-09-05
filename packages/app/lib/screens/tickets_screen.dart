@@ -260,7 +260,12 @@ class _TicketsScreenState extends State<TicketsScreen> {
                   itemBuilder: (context, index) => TicketTile(
                     ticket: _tickets[index],
                     showStation: true,
-                    onTap: () => showTicketDetailSheet(context, _tickets[index]),
+                    onTap: () async {
+                      if (await showTicketDetailSheet(context, _tickets[index]) &&
+                          mounted) {
+                        await _load();
+                      }
+                    },
                     onPrint: () => _print(_tickets[index]),
                   ),
                 ),

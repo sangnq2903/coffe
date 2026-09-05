@@ -135,6 +135,25 @@ class TicketService {
     final yieldRatio = asDoubleOrNull(body['yield_ratio']) ?? ticket.yieldRatio;
     _validateYieldRatio(yieldRatio);
 
+    // Cho sửa biển số vì gõ sai biển là lỗi hay gặp nhất, nhưng vẫn giữ luật
+    // "một xe chỉ có một phiếu chờ cân lần 2 tại một trạm": sửa thành biển
+    // đang có phiếu dở dang khác thì cân lần 2 không biết khớp vào phiếu nào.
+    var plateNo = ticket.plateNo;
+    if (body.containsKey('plate_no')) {
+      plateNo = Vehicle.normalizePlate(asString(body['plate_no']));
+      if (plateNo.isEmpty) throw BusinessException('Biển số xe không được để trống.');
+      if (plateNo != ticket.plateNo) {
+        final pending =
+            _repo.pendingTicketForPlate(plateNo, stationCode: ticket.stationCode);
+        if (pending != null && pending.id != ticket.id) {
+          throw BusinessException(
+            'Xe $plateNo đang có phiếu ${pending.ticketNo} chờ cân lần 2. '
+            'Hãy hoàn tất hoặc huỷ phiếu đó trước.',
+          );
+        }
+      }
+    }
+
     final firstWeight = asDoubleOrNull(body['first_weight']) ?? ticket.firstWeight;
     final secondWeight = asDoubleOrNull(body['second_weight']) ?? ticket.secondWeight;
 
@@ -142,6 +161,10 @@ class TicketService {
       direction: body.containsKey('direction')
           ? WeighDirection.parse(body['direction'])
           : ticket.direction,
+      plateNo: plateNo,
+      vehicleId: plateNo == ticket.plateNo
+          ? ticket.vehicleId
+          : _resolveVehicle(plateNo, body)?.id,
       customerId: customer?.id ?? ticket.customerId,
       customerName: customer?.name ?? asStringOrNull(body['customer_name']) ?? ticket.customerName,
       driverName: asStringOrNull(body['driver_name']) ?? ticket.driverName,

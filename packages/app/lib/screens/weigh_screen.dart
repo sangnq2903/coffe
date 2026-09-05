@@ -243,7 +243,9 @@ class _WeighScreenState extends State<WeighScreen> {
       if (!mounted) return;
       _showMessage('Hoàn tất phiếu ${done.ticketNo} — KL hàng ${formatWeight(done.netWeight)} kg.');
       // Mở ngay phiếu vừa chốt để đối chiếu với tài xế và in trước khi xe rời kho.
-      await showTicketDetailSheet(context, done);
+      if (await showTicketDetailSheet(context, done) && mounted) {
+        await _loadTickets();
+      }
     } on ApiException catch (e) {
       _showMessage(e.message, isError: true);
     } finally {
@@ -794,7 +796,13 @@ class _WeighScreenState extends State<WeighScreen> {
                   final ticket = _recentList[index];
                   return TicketTile(
                     ticket: ticket,
-                    onTap: () => showTicketDetailSheet(context, ticket),
+                    onTap: () async {
+                      // Sửa hay xoá trong phiếu thì danh sách phải theo ngay,
+                      // không thì vẫn thấy số cũ cho tới lần làm mới sau.
+                      if (await showTicketDetailSheet(context, ticket) && mounted) {
+                        await _loadTickets();
+                      }
+                    },
                     onPrint: () => _print(ticket),
                   );
                 },
