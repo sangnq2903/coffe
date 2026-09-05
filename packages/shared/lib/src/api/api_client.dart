@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -117,13 +118,46 @@ class ApiClient {
         scheme: _baseUrl.scheme == 'https' ? 'wss' : 'ws',
       );
 
-  /// Địa chỉ để **tải file** thẳng từ máy chủ, có kèm phiếu phiên.
+  /// Tải một file từ máy chủ về dưới dạng byte.
   ///
-  /// Cùng lý do với [wsUri]: trình duyệt tải file bằng cách mở địa chỉ, không
-  /// gắn được tiêu đề Authorization vào đó. Phần ghi nhật ký của máy chủ đã che
-  /// chuỗi `token=` nên nó không lọt vào file log.
-  Uri downloadUri(String path, [Map<String, String>? query]) =>
-      _build(path, {...?query, if (hasToken) 'token': authToken!});
+  /// Đi qua đúng đường của mọi lời gọi khác nên phiếu phiên nằm trong tiêu đề,
+  /// không phải nhét vào địa chỉ. Bên gọi tự quyết định làm gì với đống byte —
+  /// trên web thì giao cho trình duyệt tải xuống, trên máy tính và điện thoại
+  /// thì ghi ra file rồi mở bảng chia sẻ.
+  /// Đọc câu báo lỗi từ thân phản hồi JSON; hỏng thì trả câu chung.
+  static String _loiTuThan(String body, int status) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map && decoded['error'] != null) {
+        return decoded['error'].toString();
+      }
+    } catch (_) {
+      // Không phải JSON — dùng câu chung bên dưới.
+    }
+    return 'Máy chủ báo lỗi $status';
+  }
+
+  Future<Uint8List> downloadBytes(String path, [Map<String, String>? query]) async {
+    final uri = _uri(path, query);
+    final http.Response response;
+    try {
+      response = await _http.get(uri, headers: _headers).timeout(timeout);
+    } on TimeoutException {
+      throw ApiException('Máy chủ không phản hồi (quá $timeout).', uri: uri);
+    } catch (e) {
+      throw ApiException('Không gọi được máy chủ: $e', uri: uri);
+    }
+
+    if (response.statusCode >= 400) {
+      // Máy chủ từ chối thì thân phản hồi là JSON báo lỗi, không phải file.
+      throw ApiException(
+        _loiTuThan(response.body, response.statusCode),
+        statusCode: response.statusCode,
+        uri: uri,
+      );
+    }
+    return response.bodyBytes;
+  }
 
   void close() => _http.close();
 

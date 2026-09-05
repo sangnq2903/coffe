@@ -1,9 +1,9 @@
 import 'package:canxe_shared/canxe_shared.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../core/formatters.dart';
+import '../core/tai_file.dart';
 import '../core/theme.dart';
 import '../state/server_connection.dart';
 
@@ -88,6 +88,7 @@ class _TradeScreenState extends State<TradeScreen> {
   List<GoodsType> _goods = const [];
   List<Customer> _customers = const [];
   bool _loading = false;
+  bool _dangXuat = false;
   String? _error;
 
   ApiClient? get _client => context.read<ServerConnection>().client;
@@ -198,31 +199,50 @@ class _TradeScreenState extends State<TradeScreen> {
 
   /// Tải file Excel về máy để gửi kế toán.
   ///
-  /// Mở thẳng địa chỉ thay vì tải bằng mã rồi tự lưu: máy chủ đã gắn
-  /// `Content-Disposition: attachment` nên trình duyệt tự tải, không phải nhồi
-  /// cả file vào bộ nhớ của trang.
-  ///
   /// Xuất **đúng phần đang lọc**: lọc "chưa có hoá đơn" rồi bấm xuất là ra đúng
   /// danh sách cần đối chiếu, chứ không phải cả sổ.
   Future<void> _xuatExcel() async {
     final client = _client;
-    if (client == null) return;
+    if (client == null || _dangXuat) return;
+    setState(() {
+      _dangXuat = true;
+      _error = null;
+    });
 
-    final uri = _tongQuan
-        ? client.downloadUri('/api/giao-dich/tong-quan/xuat-excel')
-        : client.downloadUri('/api/giao-dich/xuat-excel', {
-            'from': timeToMillis(_from).toString(),
-            'to': timeToMillis(_to).toString(),
-            if (_kind != null) 'kind': _kind!.value,
-            if (_invoice.value != null) 'hoa_don': _invoice.value! ? '1' : '0',
-            if (_goodsFilter != null) 'goods_type_id': _goodsFilter!,
-            if (_partnerFilter != null) 'partner_id': _partnerFilter!,
-            if (_search.text.trim().isNotEmpty) 'q': _search.text.trim(),
-          });
+    try {
+      final thang = '${_month.year}-${_month.month.toString().padLeft(2, '0')}';
+      final (duong, ten) = _tongQuan
+          ? ('/api/giao-dich/tong-quan/xuat-excel', 'ton-kho.xlsx')
+          : ('/api/giao-dich/xuat-excel', 'so-mua-ban-$thang.xlsx');
 
-    final xong = await launchUrl(uri, webOnlyWindowName: '_self');
-    if (!xong && mounted) {
-      setState(() => _error = 'Không mở được đường dẫn tải file: $uri');
+      final bytes = await client.downloadBytes(duong, {
+        if (!_tongQuan) ...{
+          'from': timeToMillis(_from).toString(),
+          'to': timeToMillis(_to).toString(),
+          if (_kind != null) 'kind': _kind!.value,
+          if (_invoice.value != null) 'hoa_don': _invoice.value! ? '1' : '0',
+          if (_goodsFilter != null) 'goods_type_id': _goodsFilter!,
+          if (_partnerFilter != null) 'partner_id': _partnerFilter!,
+          if (_search.text.trim().isNotEmpty) 'q': _search.text.trim(),
+        },
+      });
+
+      await luuFile(
+        bytes,
+        ten,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Đã tải $ten')),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Không lưu được file: $e');
+    } finally {
+      if (mounted) setState(() => _dangXuat = false);
     }
   }
 
@@ -287,9 +307,15 @@ class _TradeScreenState extends State<TradeScreen> {
               ),
               const Spacer(),
               OutlinedButton.icon(
-                onPressed: _xuatExcel,
-                icon: const Icon(Icons.file_download_outlined, size: 18),
-                label: const Text('Xuất Excel'),
+                onPressed: _dangXuat ? null : _xuatExcel,
+                icon: _dangXuat
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.file_download_outlined, size: 18),
+                label: Text(_dangXuat ? 'Đang xuất...' : 'Xuất Excel'),
               ),
               const SizedBox(width: AppTheme.gapSm),
               FilledButton.icon(

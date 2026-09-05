@@ -19,7 +19,8 @@ dependencies:
   shared_preferences: ^2.3.3
   pdf: ^3.11.3
   printing: ^5.14.3
-  url_launcher: ^6.3.2
+  path_provider: ^2.1.5
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:
