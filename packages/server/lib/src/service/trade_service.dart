@@ -58,6 +58,51 @@ class TradeService {
         query: query,
       ));
 
+  /// Tồn kho từng mặt hàng, **cộng dồn cả sổ** chứ không cắt theo tháng.
+  ///
+  /// Hàng nhập tháng này bán sang tháng sau là chuyện thường, nên hỏi "còn bao
+  /// nhiêu trong kho" mà chỉ nhìn một tháng thì ra số vô nghĩa.
+  ///
+  /// Gộp theo loại hàng trong danh mục; thứ gõ tay không có trong danh mục thì
+  /// gộp theo tên đã bỏ dấu, để "Cà nhân" và "ca nhan" không thành hai dòng.
+  TradeStock stock({DateTime? from, DateTime? to}) {
+    final all = _trades.trades(from: from, to: to);
+
+    final gop = <String, StockLine>{};
+    for (final t in all) {
+      final khoa = t.goodsTypeId ?? 'ten:${normalizeForSearch(t.goodsName)}';
+      final cu = gop[khoa];
+      final laNhap = t.kind == TradeKind.muaVao;
+
+      gop[khoa] = StockLine(
+        goodsTypeId: t.goodsTypeId,
+        goodsName: cu?.goodsName.isNotEmpty ?? false
+            ? cu!.goodsName
+            : (t.goodsName.isEmpty ? '(không ghi tên hàng)' : t.goodsName),
+        quantityIn: (cu?.quantityIn ?? 0) + (laNhap ? t.quantity : 0),
+        quantityOut: (cu?.quantityOut ?? 0) + (laNhap ? 0 : t.quantity),
+        amountIn: (cu?.amountIn ?? 0) + (laNhap ? t.amount : 0),
+        amountOut: (cu?.amountOut ?? 0) + (laNhap ? 0 : t.amount),
+        count: (cu?.count ?? 0) + 1,
+      );
+    }
+
+    // Mặt hàng còn tồn nhiều đứng trước — đó là thứ chủ cần nhìn đầu tiên.
+    final lines = gop.values.toList()
+      ..sort((a, b) {
+        final theoTon = b.quantityBalance.compareTo(a.quantityBalance);
+        return theoTon != 0 ? theoTon : a.goodsName.compareTo(b.goodsName);
+      });
+
+    final ngay = all.map((e) => e.date).toList()..sort();
+    return TradeStock(
+      lines: lines,
+      summary: TradeSummary.of(all),
+      firstDate: ngay.isEmpty ? null : ngay.first,
+      lastDate: ngay.isEmpty ? null : ngay.last,
+    );
+  }
+
   Trade save(Map<String, Object?> body, {String? createdBy}) {
     final id = asStringOrNull(body['id']);
     final existing = id == null ? null : _trades.tradeById(id);

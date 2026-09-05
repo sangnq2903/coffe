@@ -300,6 +300,102 @@ void main() {
       expect(((await soMuaBan('?q=đại lý'))['items'] as List).length, 1);
     });
 
+    test('tìm chữ kèm lọc ngày cùng lúc', () async {
+      // Câu truy vấn từng trộn `?` với `?1` nên SQLite đếm sai số tham số và
+      // vỡ ngay khi có cả hai bộ lọc — mà giao diện thì luôn gửi kèm khoảng
+      // ngày của tháng đang xem, nên ô tìm hỏng mọi lúc.
+      final res = await call(
+        'GET',
+        '/api/giao-dich?from=${ngay(2026, 9, 1)}&to=${ngay(2026, 9, 30)}&q=ca',
+        token: tokenChu,
+      );
+      expect(res.statusCode, 200, reason: await res.readAsString());
+    });
+
+    test('gõ không dấu vẫn tìm ra', () async {
+      // Người ta gõ nhanh thường không bật bộ gõ tiếng Việt.
+      await post('/api/giao-dich', {
+        'date': ngay(2026, 9, 8),
+        'amount': 500000,
+        'goods_name': 'Cà phê nhân xô',
+        'partner_name': 'Nguyễn Văn Bảy',
+      });
+      for (final tu in ['ca phe', 'nhan xo', 'nguyen van bay', 'BAY']) {
+        expect(((await soMuaBan('?q=$tu'))['items'] as List).length, 1,
+            reason: 'tìm "$tu" phải ra');
+      }
+    });
+
+    test('lọc theo loại hàng và theo đối tác', () async {
+      final loaiKhac = (await post('/api/goods-types',
+          {'name': 'Trấu', 'default_yield_ratio': 100}))['id'] as String;
+      final khachKhac =
+          (await post('/api/customers', {'name': 'Trần Thị Hoa'}))['id'] as String;
+      await post('/api/giao-dich', {
+        'date': ngay(2026, 9, 9),
+        'amount': 800000,
+        'goods_type_id': loaiKhac,
+        'partner_id': khachKhac,
+      });
+
+      // Bốn dòng dựng sẵn đều là cà nhân và không có đối tác.
+      expect(((await soMuaBan('?goods_type_id=$idCaNhan'))['items'] as List).length, 4);
+      expect(((await soMuaBan('?goods_type_id=$loaiKhac'))['items'] as List).length, 1);
+      expect(((await soMuaBan('?partner_id=$khachKhac'))['items'] as List).length, 1);
+
+      // Số tổng phải theo đúng phần đang lọc.
+      final t = TradeSummary.fromJson(
+          (await soMuaBan('?goods_type_id=$loaiKhac'))['summary']! as Map<String, Object?>);
+      expect(t.amountIn, 800000);
+    });
+
+    test('tổng quan cộng dồn cả sổ, không cắt theo tháng', () async {
+      // Bốn dòng dựng sẵn: tháng 9 có 3, tháng 10 có 1 — tồn phải gộp cả hai.
+      final tq = TradeStock.fromJson(
+          (await body(await call('GET', '/api/giao-dich/tong-quan', token: tokenChu)))
+              as Map<String, Object?>);
+
+      expect(tq.summary.quantityIn, 10000);
+      expect(tq.summary.quantityOut, 6000);
+      expect(tq.summary.quantityBalance, 4000);
+
+      // Cả bốn dòng cùng loại hàng nên gộp thành một dòng tồn.
+      expect(tq.lines.length, 1);
+      final d = tq.lines.single;
+      expect(d.goodsName, 'Cà nhân');
+      expect(d.quantityBalance, 4000);
+      expect(d.count, 4);
+      expect(d.averageCost, 100000, reason: '1.000.000.000 chia 10.000 kg');
+
+      expect(tq.firstDate!.day, 5);
+      expect(tq.lastDate!.month, 10);
+    });
+
+    test('mặt hàng gõ tay gộp theo tên bỏ dấu', () async {
+      for (final ten in ['Phân bón', 'phan bon']) {
+        await post('/api/giao-dich', {
+          'date': ngay(2026, 9, 11),
+          'kind': 'mua_vao',
+          'goods_name': ten,
+          'quantity': 100,
+          'amount': 1000000,
+        });
+      }
+      final tq = TradeStock.fromJson(
+          (await body(await call('GET', '/api/giao-dich/tong-quan', token: tokenChu)))
+              as Map<String, Object?>);
+
+      final phan = tq.lines.where((e) => e.goodsTypeId == null).toList();
+      expect(phan.length, 1, reason: 'hai cách viết phải là một dòng');
+      expect(phan.single.quantityIn, 200);
+    });
+
+    test('tổng quan cũng chỉ dành cho tài khoản chủ', () async {
+      expect((await call('GET', '/api/giao-dich/tong-quan', token: tokenTong)).statusCode,
+          403);
+      expect((await call('GET', '/api/giao-dich/tong-quan')).statusCode, 401);
+    });
+
     test('mới nhất đứng đầu', () async {
       final items = (await soMuaBan())['items']! as List;
       final dau = Trade.fromJson((items.first as Map).cast<String, Object?>());

@@ -1,6 +1,7 @@
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:canxe_shared/canxe_shared.dart';
 import 'package:path/path.dart' as p;
 // Đặt bí danh vì `open` của sqlite3 trùng tên với hàm khởi tạo tĩnh bên dưới.
 import 'package:sqlite3/open.dart' as sqlite_open;
@@ -57,6 +58,19 @@ class AppDatabase {
     db.execute('PRAGMA journal_mode = WAL;');
     db.execute('PRAGMA foreign_keys = ON;');
     db.execute('PRAGMA busy_timeout = 5000;');
+
+    // `lower()` của SQLite chỉ biết chữ Latin không dấu, nên "Cà nhân" không
+    // bao giờ khớp với "ca nhan". Gắn thẳng hàm bỏ dấu của Dart vào SQLite để
+    // lọc ngay trong câu truy vấn — lọc ở đây thì con số tổng vẫn tính đúng
+    // trên phần đang xem, còn lọc sau khi đã đọc lên thì tổng một đằng danh
+    // sách một nẻo.
+    db.createFunction(
+      functionName: 'khong_dau',
+      argumentCount: const AllowedArgumentCount(1),
+      deterministic: true,
+      directOnly: false,
+      function: (args) => normalizeForSearch(args.first?.toString()),
+    );
 
     final instance = AppDatabase._(db, path);
     instance._migrate();

@@ -227,9 +227,13 @@ class PayrollRepository {
       where.add('station_code = ?');
       args.add(stationCode.toUpperCase());
     }
-    if (query != null && query.trim().isNotEmpty) {
-      where.add('(lower(name) LIKE ?1 OR lower(ifnull(phone, "")) LIKE ?1)');
-      args.add('%${query.trim().toLowerCase()}%');
+    final tim = normalizeForSearch(query);
+    if (tim.isNotEmpty) {
+      // Mỗi cột một dấu `?` riêng chứ không dùng `?1` dùng lại: `?1` chỉ đúng khi
+      // không có tham số nào khác đứng trước, mà ở đây còn bộ lọc khác nữa —
+      // trộn hai kiểu thì SQLite đếm sai số tham số và câu truy vấn vỡ.
+      where.add('(khong_dau(name) LIKE ? OR khong_dau(ifnull(phone, \'\')) LIKE ?)');
+      args.addAll(List.filled(2, '%$tim%'));
     }
     return _db
         .select(

@@ -67,6 +67,24 @@ class TradeRouter {
           });
         }));
 
+    // Trang tổng quan: tồn kho cộng dồn cả sổ, không cắt theo tháng.
+    router.get('/api/giao-dich/tong-quan', (Request request) => guard(() {
+          final chan = _chan(request);
+          if (chan != null) return chan;
+
+          final q = request.url.queryParameters;
+          final ton = service.stock(
+            from: asTimeOrNull(q['from']),
+            to: asTimeOrNull(q['to']),
+          );
+          return json({
+            'lines': ton.lines.map((e) => e.toJson()).toList(),
+            'summary': ton.summary.toJson(),
+            'first_date': timeToMillisOrNull(ton.firstDate),
+            'last_date': timeToMillisOrNull(ton.lastDate),
+          });
+        }));
+
     router.post('/api/giao-dich', (Request request) async {
       final data = await body(request);
       return guard(() {

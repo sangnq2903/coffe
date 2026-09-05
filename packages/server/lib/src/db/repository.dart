@@ -95,9 +95,11 @@ class Repository {
     final where = <String>['deleted = 0'];
     final args = <Object?>[];
     if (!includeInactive) where.add('active = 1');
-    if (query != null && query.trim().isNotEmpty) {
-      where.add('(lower(name) LIKE ?1 OR lower(code) LIKE ?1 OR ifnull(phone, "") LIKE ?1)');
-      args.add('%${query.trim().toLowerCase()}%');
+    final timKhach = normalizeForSearch(query);
+    if (timKhach.isNotEmpty) {
+      where.add('(khong_dau(name) LIKE ? OR khong_dau(code) LIKE ? '
+          'OR khong_dau(ifnull(phone, \'\')) LIKE ?)');
+      args.addAll(List.filled(3, '%$timKhach%'));
     }
     final rows = _db.select(
       'SELECT * FROM customers WHERE ${where.join(" AND ")} ORDER BY name COLLATE NOCASE LIMIT 500',
@@ -145,9 +147,10 @@ class Repository {
     final where = <String>['deleted = 0'];
     final args = <Object?>[];
     if (!includeInactive) where.add('active = 1');
-    if (query != null && query.trim().isNotEmpty) {
-      where.add('(lower(plate_no) LIKE ?1 OR lower(ifnull(driver_name, "")) LIKE ?1)');
-      args.add('%${query.trim().toLowerCase()}%');
+    final timXe = normalizeForSearch(query);
+    if (timXe.isNotEmpty) {
+      where.add('(khong_dau(plate_no) LIKE ? OR khong_dau(ifnull(driver_name, \'\')) LIKE ?)');
+      args.addAll(List.filled(2, '%$timXe%'));
     }
     final rows = _db.select(
       'SELECT * FROM vehicles WHERE ${where.join(" AND ")} ORDER BY plate_no LIMIT 500',

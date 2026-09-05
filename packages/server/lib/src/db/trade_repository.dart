@@ -58,10 +58,17 @@ class TradeRepository {
       where.add('partner_id = ?');
       args.add(partnerId);
     }
-    if (query != null && query.trim().isNotEmpty) {
-      where.add('(lower(goods_name) LIKE ?1 OR lower(partner_name) LIKE ?1 '
-          'OR lower(ifnull(invoice_no, "")) LIKE ?1 OR lower(ifnull(note, "")) LIKE ?1)');
-      args.add('%${query.trim().toLowerCase()}%');
+    final tim = normalizeForSearch(query);
+    if (tim.isNotEmpty) {
+      // Bỏ dấu cả hai vế: gõ "ca nhan" phải ra "Cà nhân", gõ "bay" ra
+      // "Nguyễn Văn Bảy".
+      // Mỗi cột một dấu `?` riêng chứ không dùng `?1` dùng lại: `?1` chỉ đúng khi
+      // không có tham số nào khác đứng trước, mà ở đây còn bộ lọc khác nữa —
+      // trộn hai kiểu thì SQLite đếm sai số tham số và câu truy vấn vỡ.
+      where.add('(khong_dau(goods_name) LIKE ? OR khong_dau(partner_name) LIKE ? '
+          'OR khong_dau(ifnull(invoice_no, \'\')) LIKE ? '
+          'OR khong_dau(ifnull(note, \'\')) LIKE ?)');
+      args.addAll(List.filled(4, '%$tim%'));
     }
 
     final sql = 'SELECT * FROM giao_dich WHERE ${where.join(" AND ")} '

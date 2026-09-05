@@ -43,6 +43,15 @@ extension TradeApi on ApiClient {
         if (limit != null) 'limit': '$limit',
       }));
 
+  /// Trang tổng quan: tồn kho từng mặt hàng, cộng dồn cả sổ.
+  ///
+  /// Bỏ trống [from]/[to] là tính từ giao dịch đầu tiên tới giờ.
+  Future<TradeStock> tradeStock({DateTime? from, DateTime? to}) async =>
+      TradeStock.fromJson(await getMap('/api/giao-dich/tong-quan', {
+        if (from != null) 'from': timeToMillis(from).toString(),
+        if (to != null) 'to': timeToMillis(to).toString(),
+      }));
+
   Future<Trade> saveTrade({
     String? id,
     required DateTime date,

@@ -214,6 +214,87 @@ class Trade {
       );
 }
 
+/// Tồn kho của **một mặt hàng**, cộng dồn từ đầu chứ không cắt theo tháng.
+///
+/// Hàng nhập tháng này bán sang tháng sau là chuyện thường, nên hỏi "còn bao
+/// nhiêu trong kho" mà chỉ nhìn một tháng thì ra số vô nghĩa.
+class StockLine {
+  const StockLine({
+    this.goodsTypeId,
+    required this.goodsName,
+    this.quantityIn = 0,
+    this.quantityOut = 0,
+    this.amountIn = 0,
+    this.amountOut = 0,
+    this.count = 0,
+  });
+
+  factory StockLine.fromJson(Map<String, Object?> json) => StockLine(
+        goodsTypeId: asStringOrNull(json['goods_type_id']),
+        goodsName: asString(json['goods_name']),
+        quantityIn: asDouble(json['quantity_in']),
+        quantityOut: asDouble(json['quantity_out']),
+        amountIn: asDouble(json['amount_in']),
+        amountOut: asDouble(json['amount_out']),
+        count: asInt(json['count']),
+      );
+
+  final String? goodsTypeId;
+  final String goodsName;
+  final double quantityIn;
+  final double quantityOut;
+  final double amountIn;
+  final double amountOut;
+
+  /// Số lần mua bán mặt hàng này.
+  final int count;
+
+  /// Còn lại trong kho theo sổ: nhập trừ xuất.
+  double get quantityBalance => quantityIn - quantityOut;
+
+  /// Bán ra trừ mua vào. Âm nghĩa là đang bỏ tiền ôm hàng.
+  double get amountBalance => amountOut - amountIn;
+
+  /// Giá vốn bình quân một ký của phần đã nhập.
+  double? get averageCost => quantityIn > 0 ? amountIn / quantityIn : null;
+
+  Map<String, Object?> toJson() => {
+        'goods_type_id': goodsTypeId,
+        'goods_name': goodsName,
+        'quantity_in': quantityIn,
+        'quantity_out': quantityOut,
+        'amount_in': amountIn,
+        'amount_out': amountOut,
+        'count': count,
+      };
+}
+
+/// Trang tổng quan: tồn kho từng mặt hàng kèm số tổng của cả sổ.
+class TradeStock {
+  const TradeStock({
+    this.lines = const [],
+    this.summary = const TradeSummary(),
+    this.firstDate,
+    this.lastDate,
+  });
+
+  factory TradeStock.fromJson(Map<String, Object?> json) => TradeStock(
+        lines: asMapList(json['lines']).map(StockLine.fromJson).toList(),
+        summary: json['summary'] is Map
+            ? TradeSummary.fromJson((json['summary']! as Map).cast<String, Object?>())
+            : const TradeSummary(),
+        firstDate: asTimeOrNull(json['first_date']),
+        lastDate: asTimeOrNull(json['last_date']),
+      );
+
+  final List<StockLine> lines;
+  final TradeSummary summary;
+
+  /// Khoảng thời gian sổ đang có dữ liệu, để ghi rõ "tính từ lúc nào tới giờ".
+  final DateTime? firstDate;
+  final DateTime? lastDate;
+}
+
 /// Số tổng của một khoảng thời gian trong sổ mua bán.
 ///
 /// Tách khối lượng ra khỏi tiền, và tách tiếp phần **có hoá đơn** với phần

@@ -76,14 +76,29 @@ class _TradeScreenState extends State<TradeScreen> {
   late DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   _InvoiceFilter _invoice = _InvoiceFilter.tatCa;
   TradeKind? _kind;
+  String? _goodsFilter;
+  String? _partnerFilter;
+
+  /// Đang xem trang tổng quan hay sổ giao dịch theo tháng.
+  bool _tongQuan = true;
 
   TradePage _page = const TradePage();
+  TradeStock _stock = const TradeStock();
   List<GoodsType> _goods = const [];
   List<Customer> _customers = const [];
   bool _loading = false;
   String? _error;
 
   ApiClient? get _client => context.read<ServerConnection>().client;
+
+  /// Có đang lọc gì không — để phân biệt "không khớp bộ lọc" với "tháng này
+  /// chưa ghi gì", hai chuyện dẫn tới hai việc phải làm khác hẳn nhau.
+  bool get _dangLoc =>
+      _search.text.trim().isNotEmpty ||
+      _kind != null ||
+      _invoice != _InvoiceFilter.tatCa ||
+      _goodsFilter != null ||
+      _partnerFilter != null;
 
   DateTime get _from => DateTime(_month.year, _month.month, 1);
   DateTime get _to => DateTime(_month.year, _month.month + 1, 0);
@@ -108,11 +123,21 @@ class _TradeScreenState extends State<TradeScreen> {
       _error = null;
     });
     try {
+      if (_tongQuan) {
+        // Tồn kho cộng dồn cả sổ, không truyền khoảng ngày.
+        final ton = await client.tradeStock();
+        if (mounted) setState(() => _stock = ton);
+        if (_goods.isEmpty) _goods = await client.goodsTypes();
+        if (_customers.isEmpty) _customers = await client.customers();
+        return;
+      }
       final page = await client.trades(
         from: _from,
         to: _to,
         kind: _kind,
         hasInvoice: _invoice.value,
+        goodsTypeId: _goodsFilter,
+        partnerId: _partnerFilter,
         query: _search.text.trim(),
       );
       // Danh mục chỉ cần tải một lần, dùng cho hộp thoại thêm giao dịch.
@@ -202,10 +227,49 @@ class _TradeScreenState extends State<TradeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final s = _page.summary;
     return Column(
       children: [
-        _toolbar(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppTheme.gapMd, AppTheme.gapMd, AppTheme.gapMd, 0),
+          child: Row(
+            children: [
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: true,
+                    icon: Icon(Icons.inventory_2_outlined, size: 18),
+                    label: Text('Tổng quan'),
+                  ),
+                  ButtonSegment(
+                    value: false,
+                    icon: Icon(Icons.list_alt, size: 18),
+                    label: Text('Sổ theo tháng'),
+                  ),
+                ],
+                selected: {_tongQuan},
+                showSelectedIcon: false,
+                onSelectionChanged: (c) {
+                  setState(() => _tongQuan = c.first);
+                  _load();
+                },
+              ),
+              const Spacer(),
+              FilledButton.icon(
+                onPressed: () => _edit(),
+                icon: const Icon(Icons.add),
+                label: const Text('Ghi giao dịch'),
+              ),
+              const SizedBox(width: AppTheme.gapXs),
+              IconButton(
+                tooltip: 'Làm mới',
+                icon: const Icon(Icons.refresh),
+                onPressed: _load,
+              ),
+            ],
+          ),
+        ),
+        if (!_tongQuan) _toolbar(),
         if (_loading) const LinearProgressIndicator(minHeight: 2),
         if (_error != null)
           Padding(
@@ -217,7 +281,15 @@ class _TradeScreenState extends State<TradeScreen> {
             ),
           ),
         Expanded(
-          child: ListView(
+          child: _tongQuan ? _trangTongQuan() : _soTheoThang(),
+        ),
+      ],
+    );
+  }
+
+  Widget _soTheoThang() {
+    final s = _page.summary;
+    return ListView(
             padding: const EdgeInsets.fromLTRB(
                 AppTheme.gapMd, 0, AppTheme.gapMd, AppTheme.gapLg),
             children: [
@@ -231,8 +303,7 @@ class _TradeScreenState extends State<TradeScreen> {
                 child: _page.items.isEmpty
                     ? EmptyHint(
                         icon: Icons.receipt_long_outlined,
-                        message: _search.text.trim().isNotEmpty || _kind != null ||
-                                _invoice != _InvoiceFilter.tatCa
+                        message: _dangLoc
                             ? 'Không có giao dịch nào khớp bộ lọc.'
                             : 'Tháng này chưa ghi giao dịch nào.',
                         action: FilledButton.icon(
@@ -251,10 +322,207 @@ class _TradeScreenState extends State<TradeScreen> {
                       ),
               ),
             ],
+    );
+  }
+
+  /// Trang tổng quan: tồn kho cộng dồn cả sổ, không cắt theo tháng.
+  Widget _trangTongQuan() {
+    final s = _stock.summary;
+    final lines = _stock.lines;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+          AppTheme.gapMd, AppTheme.gapMd, AppTheme.gapMd, AppTheme.gapLg),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: StatTile(
+                label: 'Tồn kho theo sổ',
+                value: formatWeight(s.quantityBalance),
+                unit: 'kg',
+                icon: Icons.inventory_2_outlined,
+                tone: s.quantityBalance < 0 ? AppTheme.offline : AppTheme.primary,
+              ),
+            ),
+            const SizedBox(width: AppTheme.gapSm),
+            Expanded(
+              child: StatTile(
+                label: 'Đã nhập',
+                value: formatWeight(s.quantityIn),
+                unit: 'kg',
+                icon: Icons.south_west,
+              ),
+            ),
+            const SizedBox(width: AppTheme.gapSm),
+            Expanded(
+              child: StatTile(
+                label: 'Đã xuất',
+                value: formatWeight(s.quantityOut),
+                unit: 'kg',
+                icon: Icons.north_east,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.gapSm),
+        Row(
+          children: [
+            Expanded(
+              child: StatTile(
+                label: 'Tiền mua vào',
+                value: formatMoney(s.amountIn),
+                unit: 'đ',
+                icon: Icons.arrow_downward,
+              ),
+            ),
+            const SizedBox(width: AppTheme.gapSm),
+            Expanded(
+              child: StatTile(
+                label: 'Tiền bán ra',
+                value: formatMoney(s.amountOut),
+                unit: 'đ',
+                icon: Icons.arrow_upward,
+              ),
+            ),
+            const SizedBox(width: AppTheme.gapSm),
+            Expanded(
+              child: StatTile(
+                label: 'Bán trừ mua',
+                value: formatMoney(s.amountBalance),
+                unit: 'đ',
+                icon: Icons.account_balance_wallet_outlined,
+                tone: s.amountBalance < 0 ? AppTheme.accent : AppTheme.primary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.gapMd),
+        if (s.amountBalance < 0)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppTheme.gapMd),
+            child: NoticeBar(
+              icon: Icons.info_outline,
+              color: AppTheme.accent,
+              text: 'Tiền bán ra đang ít hơn tiền mua vào '
+                  '${formatMoney(-s.amountBalance)} đ. Bình thường khi còn ôm hàng '
+                  'chưa bán — đối chiếu với cột tồn bên dưới.',
+            ),
           ),
+        SectionCard(
+          title: 'Tồn theo mặt hàng (${lines.length})',
+          subtitle: _khoangThoiGian(),
+          icon: Icons.table_rows,
+          padded: false,
+          child: lines.isEmpty
+              ? const EmptyHint(
+                  icon: Icons.inventory_2_outlined,
+                  message: 'Sổ chưa có giao dịch nào.',
+                )
+              : SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minWidth: _bangRong(context)),
+                    child: DataTable(
+                      columnSpacing: 18,
+                      horizontalMargin: 14,
+                      columns: const [
+                        DataColumn(label: Text('Mặt hàng')),
+                        DataColumn(label: Text('Nhập'), numeric: true),
+                        DataColumn(label: Text('Xuất'), numeric: true),
+                        DataColumn(label: Text('Tồn'), numeric: true),
+                        DataColumn(label: Text('Giá vốn TB'), numeric: true),
+                        DataColumn(label: Text('Tiền mua'), numeric: true),
+                        DataColumn(label: Text('Tiền bán'), numeric: true),
+                      ],
+                      rows: [
+                        for (final d in lines) _dongTon(d),
+                        DataRow(
+                          color: WidgetStateProperty.all(AppTheme.surfaceAlt),
+                          cells: [
+                            const DataCell(Text('TỔNG',
+                                style: TextStyle(fontWeight: FontWeight.w800))),
+                            _oSo(s.quantityIn, dam: true),
+                            _oSo(s.quantityOut, dam: true),
+                            _oSo(s.quantityBalance, dam: true),
+                            const DataCell(Text('')),
+                            _oSo(s.amountIn, dam: true),
+                            _oSo(s.amountOut, dam: true),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+        ),
+        const SizedBox(height: AppTheme.gapSm),
+        const Text(
+          'Tồn = nhập − xuất, cộng dồn từ giao dịch đầu tiên tới nay chứ không cắt '
+          'theo tháng. Đây là con số của sổ mua bán, không phải số cân thực tế '
+          'trong kho.',
+          style: TextStyle(fontSize: 12, color: AppTheme.textMuted, height: 1.4),
         ),
       ],
     );
+  }
+
+  String _khoangThoiGian() {
+    final dau = _stock.firstDate;
+    final cuoi = _stock.lastDate;
+    if (dau == null || cuoi == null) return 'Chưa có giao dịch';
+    return 'Từ ${formatDate(dau)} đến ${formatDate(cuoi)}';
+  }
+
+  DataRow _dongTon(StockLine d) {
+    final het = d.quantityBalance <= 0 && d.quantityIn > 0;
+    return DataRow(cells: [
+      DataCell(Row(
+        children: [
+          Container(
+            width: 3,
+            height: 22,
+            decoration: BoxDecoration(
+              color: het ? AppTheme.lineStrong : AppTheme.primary,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Text(d.goodsName, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      )),
+      _oSo(d.quantityIn),
+      _oSo(d.quantityOut),
+      DataCell(Text(
+        formatWeight(d.quantityBalance),
+        style: AppTheme.number(
+          14,
+          color: d.quantityBalance < 0 ? AppTheme.offline : AppTheme.text,
+        ),
+      )),
+      DataCell(Text(
+        d.averageCost == null ? '—' : formatMoney(d.averageCost),
+        style: AppTheme.number(13.5, weight: FontWeight.w600, color: AppTheme.textSoft),
+      )),
+      _oSo(d.amountIn),
+      _oSo(d.amountOut),
+    ]);
+  }
+
+  DataCell _oSo(double v, {bool dam = false}) => DataCell(Text(
+        formatMoney(v),
+        style: AppTheme.number(dam ? 14 : 13.5,
+            weight: dam ? FontWeight.w800 : FontWeight.w600),
+      ));
+
+  /// Bề rộng tối thiểu để bảng trải hết khung nội dung thay vì co lại.
+  double _bangRong(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    final trong =
+        (w >= AppTheme.wideBreakpoint ? w - 97 : w).clamp(0.0, AppTheme.contentMaxWidth);
+    return (trong - AppTheme.gapMd * 2 - 2).clamp(320.0, double.infinity);
   }
 
   Widget _toolbar() => Padding(
@@ -286,7 +554,7 @@ class _TradeScreenState extends State<TradeScreen> {
                   child: TextField(
                     controller: _search,
                     decoration: const InputDecoration(
-                      hintText: 'Tìm mặt hàng, đối tác, số hoá đơn, ghi chú',
+                      hintText: 'Tìm mặt hàng, đối tác, số hoá đơn — gõ không dấu cũng ra',
                       prefixIcon: Icon(Icons.search),
                     ),
                     onChanged: (_) => _load(),
@@ -314,6 +582,28 @@ class _TradeScreenState extends State<TradeScreen> {
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
+                        _LocTheoDanhMuc(
+                          nhan: 'Loại hàng',
+                          icon: Icons.inventory_2_outlined,
+                          chon: _goodsFilter,
+                          muc: [for (final g in _goods) (id: g.id, ten: g.name)],
+                          onChanged: (v) {
+                            setState(() => _goodsFilter = v);
+                            _load();
+                          },
+                        ),
+                        const SizedBox(width: AppTheme.gapSm),
+                        _LocTheoDanhMuc(
+                          nhan: 'Đối tác',
+                          icon: Icons.person_outline,
+                          chon: _partnerFilter,
+                          muc: [for (final c in _customers) (id: c.id, ten: c.name)],
+                          onChanged: (v) {
+                            setState(() => _partnerFilter = v);
+                            _load();
+                          },
+                        ),
+                        const SizedBox(width: AppTheme.gapSm),
                         SegmentedButton<_InvoiceFilter>(
                           segments: [
                             for (final f in _InvoiceFilter.values)
@@ -517,6 +807,68 @@ class _TradeScreenState extends State<TradeScreen> {
               onPressed: () => _delete(t),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Ô lọc theo một mục trong danh mục (loại hàng, đối tác).
+///
+/// Lọc ở máy chủ chứ không lọc sau khi đã tải về, để con số tổng phía trên vẫn
+/// tính đúng trên phần đang xem.
+class _LocTheoDanhMuc extends StatelessWidget {
+  const _LocTheoDanhMuc({
+    required this.nhan,
+    required this.icon,
+    required this.chon,
+    required this.muc,
+    required this.onChanged,
+  });
+
+  final String nhan;
+  final IconData icon;
+  final String? chon;
+  final List<({String id, String ten})> muc;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final dangChon = muc.any((m) => m.id == chon);
+    return Container(
+      height: AppTheme.minTouch,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: dangChon ? AppTheme.primarySoft : AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        border: Border.all(
+          color: dangChon ? AppTheme.primary.withValues(alpha: 0.5) : AppTheme.lineStrong,
+        ),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: dangChon ? chon : null,
+          isDense: true,
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          icon: const Icon(Icons.expand_more, size: 18),
+          hint: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: AppTheme.textMuted),
+              const SizedBox(width: 6),
+              Text(nhan, style: const TextStyle(fontSize: 13.5, color: AppTheme.textSoft)),
+            ],
+          ),
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+            color: dangChon ? AppTheme.primary : AppTheme.text,
+          ),
+          items: [
+            DropdownMenuItem<String?>(value: null, child: Text('$nhan: tất cả')),
+            for (final m in muc) DropdownMenuItem<String?>(value: m.id, child: Text(m.ten)),
+          ],
+          onChanged: onChanged,
         ),
       ),
     );

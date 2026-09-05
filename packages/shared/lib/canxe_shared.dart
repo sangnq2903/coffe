@@ -16,6 +16,7 @@ export 'src/payroll/payroll_calculator.dart';
 export 'src/models/vehicle.dart';
 export 'src/models/goods_type.dart';
 export 'src/models/station.dart';
+export 'src/search.dart';
 export 'src/models/trade.dart';
 export 'src/models/weigh_ticket.dart';
 export 'src/models/scale_reading.dart';
