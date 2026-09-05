@@ -9,67 +9,35 @@ import '../state/server_connection.dart';
 /// Ba ô ràng buộc nhau bởi phép nhân: khối lượng × đơn giá = thành tiền.
 enum TradeField { khoiLuong, donGia, thanhTien }
 
-/// Điền ô còn thiếu từ hai ô đã có.
+/// Tính **thành tiền** từ khối lượng và đơn giá.
 ///
-/// Luật gốc: **thành tiền = đơn giá × khối lượng**. Thành tiền là con số suy ra,
-/// hai ô kia là số người ta nhập vào.
+/// Chỉ tính một chiều. Tính ngược (lấy tiền chia ra đơn giá hay khối lượng) thì
+/// hầu như lần nào cũng ra số lẻ vô hạn — 720.000.000 chia 7.630 kg ra
+/// 94.364,3512… — mà cà phê thì không ai ghi đơn giá lẻ tới hào.
 ///
-/// - Thiếu đúng một ô → tính ô đó ra. Nhờ vậy nhập hai ô bất kỳ đều đủ: có
-///   thành tiền và khối lượng thì ra đơn giá, có thành tiền và đơn giá thì ra
-///   khối lượng.
-/// - Đã đủ cả ba, sửa **khối lượng** hoặc **đơn giá** → thành tiền tính lại
-///   theo phép nhân.
-/// - Đã đủ cả ba, sửa **thành tiền** → **không đụng vào hai ô kia**. Đó là lúc
-///   người ta cố ý ghi một số khác phép nhân (bớt giá, làm tròn lúc chốt); tự
-///   sửa đơn giá theo là ghi đè lên số họ vừa nhập. Ô thành tiền sẽ báo lệch
-///   bao nhiêu so với phép nhân để họ tự quyết.
-///
-/// Ô người dùng vừa gõ không bao giờ bị ghi đè, kể cả khi họ xoá trắng nó.
+/// - Có đủ khối lượng và đơn giá → thành tiền tính ra, làm tròn tới đồng.
+/// - Sửa **thành tiền** → không đụng vào hai ô kia. Đó là lúc người ta cố ý ghi
+///   khác phép nhân (bớt giá, làm tròn lúc chốt); ô thành tiền sẽ báo lệch bao
+///   nhiêu so với phép nhân để họ tự quyết.
+/// - Thiếu một trong hai ô kia → để yên, không đoán.
 ({double? quantity, double? unitPrice, double? amount}) fillTradeMath({
   required double? quantity,
   required double? unitPrice,
   required double? amount,
   required TradeField justEdited,
 }) {
-  bool trong(double? v) => v == null || v <= 0;
+  final giuNguyen = (quantity: quantity, unitPrice: unitPrice, amount: amount);
 
-  final oTrong = [
-    if (trong(quantity)) TradeField.khoiLuong,
-    if (trong(unitPrice)) TradeField.donGia,
-    if (trong(amount)) TradeField.thanhTien,
-  ];
+  if (justEdited == TradeField.thanhTien) return giuNguyen;
+  if (quantity == null || quantity <= 0) return giuNguyen;
+  if (unitPrice == null || unitPrice <= 0) return giuNguyen;
 
-  // Thiếu từ hai ô trở lên thì chưa đủ dữ kiện để tính ra ô nào.
-  final TradeField? can;
-  if (oTrong.length == 1) {
-    can = oTrong.first;
-  } else if (oTrong.isEmpty && justEdited != TradeField.thanhTien) {
-    can = TradeField.thanhTien;
-  } else {
-    can = null;
-  }
-
-  if (can == null || can == justEdited) {
-    return (quantity: quantity, unitPrice: unitPrice, amount: amount);
-  }
-
-  return switch (can) {
-    TradeField.thanhTien => (
-        quantity: quantity,
-        unitPrice: unitPrice,
-        amount: quantity! * unitPrice!,
-      ),
-    TradeField.donGia => (
-        quantity: quantity,
-        unitPrice: amount! / quantity!,
-        amount: amount,
-      ),
-    TradeField.khoiLuong => (
-        quantity: amount! / unitPrice!,
-        unitPrice: unitPrice,
-        amount: amount,
-      ),
-  };
+  return (
+    quantity: quantity,
+    unitPrice: unitPrice,
+    // Tiền Việt không có phần lẻ dưới đồng.
+    amount: (quantity * unitPrice).roundToDouble(),
+  );
 }
 
 /// Nhóm giao dịch đang xem, theo tình trạng hoá đơn.
@@ -787,8 +755,8 @@ class _TradeDialogState extends State<_TradeDialog> {
                     suffixText: 'đ',
                     helperText: lech
                         ? 'Khác với ${formatMoney(nhanRa)} đ nhân ra từ khối lượng × đơn giá'
-                        : 'Nhập 2 trong 3 ô, ô còn lại tự tính. Sửa thành tiền thì '
-                            'đơn giá tính lại, khối lượng giữ nguyên.',
+                        : 'Tự tính từ khối lượng × đơn giá. Sửa lại được khi '
+                            'bớt giá hay làm tròn lúc chốt.',
                     helperStyle: lech
                         ? const TextStyle(
                             color: AppTheme.accent, fontWeight: FontWeight.w600)
