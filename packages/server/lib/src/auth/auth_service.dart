@@ -71,6 +71,7 @@ class AuthService {
       fullName: fullName,
       password: password,
       role: UserRole.tong,
+      isOwner: true,
     );
   }
 
@@ -81,6 +82,7 @@ class AuthService {
     required UserRole role,
     List<String> stationScope = const [],
     bool machineAccount = false,
+    bool isOwner = false,
   }) {
     final name = username.trim().toLowerCase();
     _validateUsername(name);
@@ -100,6 +102,7 @@ class AuthService {
       role: role,
       stationScope: stationScope,
       machineAccount: machineAccount,
+      isOwner: isOwner,
       passwordHash: PasswordHasher.hash(password, salt, iterations: iterations),
       salt: salt,
       iterations: iterations,

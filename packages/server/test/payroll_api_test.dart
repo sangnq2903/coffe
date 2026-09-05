@@ -57,6 +57,7 @@ void main() {
       broker: ReadingBroker(),
       tickets: TicketService(repo, defaultStationCode: 'TRUNGTAM'),
       payroll: PayrollService(repo.payroll),
+      trades: TradeService(repo.trades, repo),
       auth: auth,
     );
     handler = const Pipeline().addMiddleware(authMiddleware(auth)).addHandler(router.handler);

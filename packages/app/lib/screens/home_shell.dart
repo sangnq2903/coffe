@@ -10,6 +10,7 @@ import 'catalog_screen.dart';
 import 'payroll/crews_screen.dart';
 import 'settings_screen.dart';
 import 'tickets_screen.dart';
+import 'trade_screen.dart';
 import 'weigh_screen.dart';
 
 /// Khung điều hướng chính. Màn hình rộng dùng thanh dọc bên trái, màn hình hẹp
@@ -24,14 +25,29 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
-  static const _destinations = [
+  /// Các mục ai đăng nhập cũng thấy.
+  static const _chung = [
     (icon: Icons.scale_outlined, active: Icons.scale, label: 'Cân xe'),
     (icon: Icons.receipt_long_outlined, active: Icons.receipt_long, label: 'Phiếu cân'),
     (icon: Icons.fact_check_outlined, active: Icons.fact_check, label: 'Chấm công'),
     (icon: Icons.folder_open_outlined, active: Icons.folder_shared, label: 'Danh mục'),
+  ];
+
+  /// Mục chỉ tài khoản chủ thấy, chèn vào giữa.
+  ///
+  /// Giấu ở giao diện chỉ là cho gọn mắt — máy chủ mới là chỗ chặn thật: mọi
+  /// đường dẫn của sổ mua bán đều từ chối tài khoản không phải chủ.
+  static const _cuaChu =
+      (icon: Icons.menu_book_outlined, active: Icons.menu_book, label: 'Sổ mua bán');
+
+  static const _cuoi = [
     (icon: Icons.settings_outlined, active: Icons.settings, label: 'Cài đặt'),
     (icon: Icons.person_outline, active: Icons.account_circle, label: 'Cá nhân'),
   ];
+
+  static List<({IconData icon, IconData active, String label})> _destinationsFor(
+          bool laChu) =>
+      [..._chung, if (laChu) _cuaChu, ..._cuoi];
 
   /// Mở lại luồng số cân mỗi khi người dùng đổi server hoặc đổi trạm.
   ///
@@ -49,14 +65,22 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final conn = context.watch<ServerConnection>();
     _syncLiveWeight(conn);
-    const pages = [
-      WeighScreen(),
-      TicketsScreen(),
-      CrewsScreen(),
-      CatalogScreen(),
-      SettingsScreen(),
-      AccountScreen(),
+
+    final laChu = conn.currentUser?.isOwner ?? false;
+    final destinations = _destinationsFor(laChu);
+    final pages = <Widget>[
+      const WeighScreen(),
+      const TicketsScreen(),
+      const CrewsScreen(),
+      const CatalogScreen(),
+      if (laChu) const TradeScreen(),
+      const SettingsScreen(),
+      const AccountScreen(),
     ];
+
+    // Đăng xuất rồi đăng nhập bằng tài khoản khác làm số mục thay đổi; giữ
+    // nguyên chỉ số cũ sẽ trỏ ra ngoài danh sách và làm trắng màn hình.
+    final index = _index < pages.length ? _index : 0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -86,7 +110,8 @@ class _HomeShellState extends State<HomeShell> {
               ? Row(
                   children: [
                     _Rail(
-                      index: _index,
+                      destinations: destinations,
+                      index: index,
                       onSelected: (i) => setState(() => _index = i),
                     ),
                     const VerticalDivider(width: 1),
@@ -96,18 +121,18 @@ class _HomeShellState extends State<HomeShell> {
                     Expanded(
                       child: PageBody(
                         padding: EdgeInsets.zero,
-                        child: pages[_index],
+                        child: pages[index],
                       ),
                     ),
                   ],
                 )
-              : pages[_index],
+              : pages[index],
           bottomNavigationBar: wide
               ? null
               : NavigationBar(
-                  selectedIndex: _index,
+                  selectedIndex: index,
                   onDestinationSelected: (i) => setState(() => _index = i),
-                  destinations: _destinations
+                  destinations: destinations
                       .map((d) => NavigationDestination(
                             icon: Icon(d.icon),
                             selectedIcon: Icon(d.active),
@@ -126,8 +151,13 @@ class _HomeShellState extends State<HomeShell> {
 /// Tự dựng thay vì dùng [NavigationRail] để nhãn đủ rộng mà đọc được: rail mặc
 /// định bó chữ vào 72px nên "Chấm công" bị xuống dòng hoặc co lại còn 9px.
 class _Rail extends StatelessWidget {
-  const _Rail({required this.index, required this.onSelected});
+  const _Rail({
+    required this.destinations,
+    required this.index,
+    required this.onSelected,
+  });
 
+  final List<({IconData icon, IconData active, String label})> destinations;
   final int index;
   final ValueChanged<int> onSelected;
 
@@ -139,9 +169,9 @@ class _Rail extends StatelessWidget {
           child: Column(
             children: [
               const SizedBox(height: AppTheme.gapSm),
-              for (var i = 0; i < _HomeShellState._destinations.length; i++)
+              for (var i = 0; i < destinations.length; i++)
                 _RailItem(
-                  destination: _HomeShellState._destinations[i],
+                  destination: destinations[i],
                   selected: i == index,
                   onTap: () => onSelected(i),
                 ),

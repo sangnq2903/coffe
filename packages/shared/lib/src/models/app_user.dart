@@ -35,6 +35,7 @@ class AppUser {
     this.stationScope = const [],
     this.active = true,
     this.machineAccount = false,
+    this.isOwner = false,
     this.passwordHash,
     this.salt,
     this.iterations = 0,
@@ -48,6 +49,7 @@ class AppUser {
     required UserRole role,
     List<String> stationScope = const [],
     bool machineAccount = false,
+    bool isOwner = false,
     required String passwordHash,
     required String salt,
     required int iterations,
@@ -59,6 +61,7 @@ class AppUser {
         role: role,
         stationScope: stationScope,
         machineAccount: machineAccount,
+        isOwner: isOwner,
         passwordHash: passwordHash,
         salt: salt,
         iterations: iterations,
@@ -73,6 +76,7 @@ class AppUser {
         stationScope: _parseScope(json['station_scope']),
         active: asBool(json['active'], fallback: true),
         machineAccount: asBool(json['machine_account']),
+        isOwner: asBool(json['is_owner']),
         passwordHash: asStringOrNull(json['password_hash']),
         salt: asStringOrNull(json['salt']),
         iterations: asInt(json['iterations']),
@@ -111,6 +115,13 @@ class AppUser {
   /// Tài khoản do máy trạm dùng để đồng bộ, ẩn khỏi danh sách người dùng.
   final bool machineAccount;
 
+  /// Tài khoản **chủ** — tài khoản lập đầu tiên lúc cài máy chủ.
+  ///
+  /// Chỉ chủ mới thấy sổ mua bán. Cờ này không cấp thêm cho ai được: đặt đúng
+  /// một lần khi lập tài khoản đầu tiên, để không ai tự nâng quyền cho mình
+  /// bằng cách sửa vai trò.
+  final bool isOwner;
+
   final String? passwordHash;
   final String? salt;
   final int iterations;
@@ -145,6 +156,7 @@ class AppUser {
         'station_scope': stationScope.join(','),
         'active': active ? 1 : 0,
         'machine_account': machineAccount ? 1 : 0,
+        'is_owner': isOwner ? 1 : 0,
         if (includeSecret) 'password_hash': passwordHash,
         if (includeSecret) 'salt': salt,
         if (includeSecret) 'iterations': iterations,
@@ -171,6 +183,7 @@ class AppUser {
         stationScope: stationScope ?? this.stationScope,
         active: active ?? this.active,
         machineAccount: machineAccount,
+        isOwner: isOwner,
         passwordHash: passwordHash ?? this.passwordHash,
         salt: salt ?? this.salt,
         iterations: iterations ?? this.iterations,

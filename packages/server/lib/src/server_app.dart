@@ -16,6 +16,7 @@ import 'db/repository.dart';
 import 'logging.dart';
 import 'scale/scale_service.dart';
 import 'service/payroll_service.dart';
+import 'service/trade_service.dart';
 import 'service/ticket_service.dart';
 import 'sync/central_session.dart';
 import 'sync/station_uplink.dart';
@@ -33,6 +34,7 @@ class ServerApp {
   late final TicketService _ticketService;
   late final AuthService _auth;
   late final PayrollService _payroll;
+  late final TradeService _trades;
   ScaleService? _scale;
   SyncWorker? _sync;
   StationUplink? _uplink;
@@ -51,6 +53,7 @@ class ServerApp {
     _broker = ReadingBroker();
     _ticketService = TicketService(_repo, defaultStationCode: config.effectiveStationCode);
     _payroll = PayrollService(_repo.payroll);
+    _trades = TradeService(_repo.trades, _repo);
     _auth = AuthService(_repo);
     // Chạm vào khoá ký ngay lúc khởi động để nó được sinh và ghi lại một lần,
     // thay vì sinh lúc có người đăng nhập giữa ca.
@@ -68,6 +71,7 @@ class ServerApp {
       broker: _broker,
       tickets: _ticketService,
       payroll: _payroll,
+      trades: _trades,
       auth: _auth,
       scale: _scale,
       sync: _sync,

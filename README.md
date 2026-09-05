@@ -480,6 +480,56 @@ cả công ty nằm trên ổ cứng máy ở từng kho. Phiếu cân thì khô
 
 ---
 
+## 5d. Sổ mua bán — chỉ tài khoản chủ
+
+Ghi từng lần nhập và xuất hàng kèm tiền, và đánh dấu lần nào **có xuất hoá đơn**.
+Sổ này tách hẳn khỏi phiếu cân: ghi được cả thứ không qua bàn cân (mua phân bón,
+tiền dầu, bán lẻ) và tự khai khối lượng.
+
+### Ai xem được
+
+| | Sổ mua bán |
+|---|---|
+| **Chủ** — tài khoản lập đầu tiên lúc cài máy chủ | Xem và ghi |
+| Quản lý tổng | **Không** |
+| Nhân viên trạm cân | **Không** |
+
+Cờ chủ đặt đúng một lần khi lập tài khoản đầu tiên và **không cấp thêm cho ai
+được** — gửi kèm `is_owner` lúc tạo tài khoản cũng không ăn thua. Nếu không,
+người thêm được tài khoản là tự nâng quyền cho mình. Cơ sở dữ liệu có từ trước
+thì tài khoản người thật cũ nhất được gắn cờ khi nâng cấp.
+
+Giấu mục trong thanh điều hướng chỉ là cho gọn mắt; **máy chủ mới là chỗ chặn
+thật** — mọi đường dẫn của sổ đều từ chối tài khoản không phải chủ.
+
+### Chỉ nằm trên máy chủ trung tâm
+
+Sổ mua bán **không có mặt trong luồng đồng bộ**. Giá mua vào là dữ liệu nhạy cảm
+nhất của cả hệ thống; đẩy xuống kho là mỗi máy ở kho có một bản sao trên ổ cứng.
+Mở app bằng địa chỉ máy trạm thì sổ báo lỗi rõ ràng thay vì cho ghi vào chỗ
+không ai thấy.
+
+### Một dòng ghi những gì
+
+- **Chiều**: mua vào (nhập) hay bán ra (xuất)
+- **Mặt hàng** và **đối tác**: chọn trong danh mục cho tên khỏi lệch, hoặc tự gõ
+  với thứ mua bán một lần
+- **Khối lượng × đơn giá → thành tiền**: màn hình tự nhân điền sẵn, nhưng **sửa
+  lại được**. Bớt giá cho khách, hay khoản không có khối lượng như tiền dầu, thì
+  không nhân ra được — nên **số tiền mới là con số tính vào tổng**, khối lượng và
+  đơn giá chỉ là cách tính ra nó. Lệch nhau thì ô nhập báo ngay.
+- **Có xuất hoá đơn** hay không, kèm số hoá đơn nếu có
+
+### Số tổng
+
+Bốn câu hỏi tách riêng, vì chúng khác nhau: **khối lượng** nhập / xuất / còn lại
+theo sổ, và **tiền** mua vào / bán ra / có hoá đơn / không hoá đơn.
+
+Số tổng luôn tính trên **đúng bộ lọc đang xem**. Lọc "chưa có hoá đơn" mà ô tổng
+vẫn là số của cả kỳ thì đọc ra kết luận sai.
+
+---
+
 ## 6. Cách hệ thống giữ dữ liệu an toàn
 
 - **Mất mạng vẫn cân được.** Trạm cân có cơ sở dữ liệu riêng. Bản ghi mới được

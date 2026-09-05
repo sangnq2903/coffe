@@ -14,7 +14,9 @@ import '../scale/scale_service.dart';
 import '../scale/win32_serial.dart';
 import '../service/payroll_service.dart';
 import '../service/ticket_service.dart';
+import '../service/trade_service.dart';
 import 'payroll_router.dart';
+import 'trade_router.dart';
 import '../sync/sync_worker.dart';
 import 'reading_broker.dart';
 
@@ -28,6 +30,7 @@ class ApiRouter {
     required this.broker,
     required this.tickets,
     required this.payroll,
+    required this.trades,
     required this.auth,
     this.scale,
     this.sync,
@@ -38,6 +41,7 @@ class ApiRouter {
   final ReadingBroker broker;
   final TicketService tickets;
   final PayrollService payroll;
+  final TradeService trades;
   final AuthService auth;
 
   /// Chỉ có ở vai trò trạm cân.
@@ -443,6 +447,16 @@ class ApiRouter {
     PayrollRouter(
       repo: repo.payroll,
       service: payroll,
+      json: _json,
+      error: _error,
+      guard: _guard,
+      body: _body,
+      user: _user,
+    ).attach(router);
+
+    TradeRouter(
+      service: trades,
+      config: config,
       json: _json,
       error: _error,
       guard: _guard,

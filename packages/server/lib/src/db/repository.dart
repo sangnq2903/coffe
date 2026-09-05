@@ -3,16 +3,23 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'database.dart';
 import 'payroll_repository.dart';
+import 'trade_repository.dart';
 
 /// Truy cập dữ liệu cho cả hai vai trò server. Cùng một lược đồ chạy ở trạm cân
 /// lẫn máy chủ trung tâm, chỉ khác nhau ở việc ai đồng bộ cho ai.
 class Repository {
-  Repository(this._appDb) : payroll = PayrollRepository(_appDb);
+  Repository(this._appDb)
+      : payroll = PayrollRepository(_appDb),
+        trades = TradeRepository(_appDb);
 
   final AppDatabase _appDb;
 
   /// Phần dữ liệu của module chấm công.
   final PayrollRepository payroll;
+
+  /// Sổ mua bán. Cố ý **không** có mặt trong [changesSince] hay [dirtyChanges]:
+  /// dữ liệu này chỉ sống trên máy chủ trung tâm, không đồng bộ xuống kho.
+  final TradeRepository trades;
 
   Database get _db => _appDb.db;
 
@@ -50,12 +57,14 @@ class Repository {
   AppUser upsertUser(AppUser user, {bool dirty = true}) {
     _db.execute('''
       INSERT INTO nguoi_dung (id, username, full_name, role, station_scope, active,
-        machine_account, password_hash, salt, iterations, updated_at, deleted, dirty)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        machine_account, is_owner, password_hash, salt, iterations, updated_at,
+        deleted, dirty)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         username = excluded.username, full_name = excluded.full_name,
         role = excluded.role, station_scope = excluded.station_scope,
         active = excluded.active, machine_account = excluded.machine_account,
+        is_owner = excluded.is_owner,
         password_hash = excluded.password_hash, salt = excluded.salt,
         iterations = excluded.iterations, updated_at = excluded.updated_at,
         deleted = excluded.deleted, dirty = excluded.dirty
@@ -68,6 +77,7 @@ class Repository {
       user.stationScope.join(','),
       user.active ? 1 : 0,
       user.machineAccount ? 1 : 0,
+      user.isOwner ? 1 : 0,
       user.passwordHash ?? '',
       user.salt ?? '',
       user.iterations,

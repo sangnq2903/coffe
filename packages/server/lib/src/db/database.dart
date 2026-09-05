@@ -87,6 +87,60 @@ class AppDatabase {
       _createV5();
       db.execute('PRAGMA user_version = 5;');
     }
+    if (version < 6) {
+      _createV6();
+      db.execute('PRAGMA user_version = 6;');
+    }
+  }
+
+  /// Phiên bản 6: sổ mua bán, chỉ chủ mới xem được.
+  ///
+  /// Bảng này **không nằm trong luồng đồng bộ**: giá mua vào là dữ liệu nhạy
+  /// cảm nhất, để nó đi xuống máy ở kho là mỗi kho có một bản sao. Vì vậy sổ
+  /// mua bán chỉ sống trên máy chủ trung tâm.
+  void _createV6() {
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS giao_dich (
+        id TEXT PRIMARY KEY,
+        date INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        goods_type_id TEXT,
+        goods_name TEXT NOT NULL DEFAULT '',
+        partner_id TEXT,
+        partner_name TEXT NOT NULL DEFAULT '',
+        quantity REAL NOT NULL DEFAULT 0,
+        unit TEXT NOT NULL DEFAULT 'kg',
+        unit_price REAL NOT NULL DEFAULT 0,
+        amount REAL NOT NULL DEFAULT 0,
+        has_invoice INTEGER NOT NULL DEFAULT 0,
+        invoice_no TEXT,
+        note TEXT,
+        created_by TEXT,
+        updated_at INTEGER NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        dirty INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+    db.execute('CREATE INDEX IF NOT EXISTS idx_giao_dich_ngay ON giao_dich(date);');
+    db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_giao_dich_hoa_don ON giao_dich(has_invoice, date);');
+
+    try {
+      db.execute('ALTER TABLE nguoi_dung ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0');
+    } on SqliteException {
+      // Cột đã có sẵn (cơ sở dữ liệu dựng mới bằng lược đồ mới nhất).
+    }
+
+    // Cơ sở dữ liệu đã chạy trước khi có cờ này: tài khoản người thật cũ nhất
+    // chính là tài khoản chủ lập lúc cài máy, gắn cờ cho nó.
+    db.execute('''
+      UPDATE nguoi_dung SET is_owner = 1
+      WHERE id = (
+        SELECT id FROM nguoi_dung
+        WHERE machine_account = 0 AND deleted = 0
+        ORDER BY updated_at LIMIT 1
+      ) AND NOT EXISTS (SELECT 1 FROM nguoi_dung WHERE is_owner = 1);
+    ''');
   }
 
   /// Phiên bản 5: nghỉ theo giờ trong ngày.
