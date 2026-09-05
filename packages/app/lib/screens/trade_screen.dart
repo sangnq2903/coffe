@@ -2,6 +2,7 @@ import 'package:canxe_shared/canxe_shared.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_settings.dart';
 import '../core/formatters.dart';
 import '../core/tai_file.dart';
 import '../core/theme.dart';
@@ -46,6 +47,28 @@ double? computeTradeField({
 String soVaoO(double value) => value == value.roundToDouble()
     ? value.toStringAsFixed(0)
     : value.toString();
+
+/// Quy đổi trấu mua vào ra trấu thành phẩm và ước lời lỗ.
+///
+/// Mua trấu thô về, phơi sàng xong còn lại một phần — đó là [tyLe] phần trăm.
+/// Hai giá chỉ để **ướm thử**: số đã mua bán thật vẫn nằm nguyên trong sổ, hàm
+/// này không đụng vào.
+({double klThanhPham, double tienMua, double tienBan, double lai}) tinhQuyDoiTrau({
+  required double klMua,
+  required double tyLe,
+  required double giaMua,
+  required double giaBan,
+}) {
+  final klThanhPham = klMua * tyLe / 100;
+  final tienMua = klMua * giaMua;
+  final tienBan = klThanhPham * giaBan;
+  return (
+    klThanhPham: klThanhPham,
+    tienMua: tienMua,
+    tienBan: tienBan,
+    lai: tienBan - tienMua,
+  );
+}
 
 /// Nhóm giao dịch đang xem, theo tình trạng hoá đơn.
 enum _InvoiceFilter {
@@ -472,6 +495,8 @@ class _TradeScreenState extends State<TradeScreen> {
                   'chưa bán — đối chiếu với cột tồn bên dưới.',
             ),
           ),
+        _khoiTrau(lines),
+        const SizedBox(height: AppTheme.gapMd),
         SectionCard(
           title: 'Tồn theo mặt hàng (${lines.length})',
           subtitle: _khoangThoiGian(),
@@ -528,6 +553,185 @@ class _TradeScreenState extends State<TradeScreen> {
       ],
     );
   }
+
+  /// Quy đổi trấu mua vào ra trấu thành phẩm và ước lời lỗ.
+  ///
+  /// Lấy khối lượng trấu **đã mua** trong sổ nhân tỷ lệ thành phẩm ra số bán
+  /// được, rồi ướm với hai giá tham chiếu. Ba ô nhập sửa được vì giá thị trường
+  /// đổi luôn; số đã mua bán thật thì vẫn nằm nguyên trong sổ, khối này không
+  /// đụng vào.
+  Widget _khoiTrau(List<StockLine> lines) {
+    final settings = context.watch<AppSettings>();
+
+    // Nhận ra trấu theo tên đã bỏ dấu, không phụ thuộc vào việc có lập danh mục
+    // hay gõ tay, viết hoa hay thường.
+    final dongTrau = lines
+        .where((e) => normalizeForSearch(e.goodsName).contains('trau'))
+        .toList();
+    final klMua = dongTrau.fold<double>(0, (t, e) => t + e.quantityIn);
+    final tienMuaThat = dongTrau.fold<double>(0, (t, e) => t + e.amountIn);
+
+    final giaMua = settings.trauGiaMua;
+    final giaBan = settings.trauGiaBan;
+    final tyLe = settings.trauTyLe;
+
+    final kq = tinhQuyDoiTrau(
+      klMua: klMua,
+      tyLe: tyLe,
+      giaMua: giaMua,
+      giaBan: giaBan,
+    );
+    final klThanhPham = kq.klThanhPham;
+    final tienMuaUoc = kq.tienMua;
+    final tienBanUoc = kq.tienBan;
+    final lai = kq.lai;
+
+    return SectionCard(
+      title: 'Quy đổi trấu thành phẩm',
+      subtitle: klMua > 0
+          ? 'Từ ${formatWeight(klMua)} kg trấu đã mua trong sổ'
+          : 'Sổ chưa có lần mua trấu nào',
+      icon: Icons.grass,
+      accentColor: AppTheme.accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _oTrau(
+                  nhan: 'Giá mua',
+                  hau: 'đ/kg',
+                  giaTri: giaMua,
+                  onSua: (v) => settings.setTrau(giaMua: v),
+                ),
+              ),
+              const SizedBox(width: AppTheme.gapSm),
+              Expanded(
+                child: _oTrau(
+                  nhan: 'Tỷ lệ thành phẩm',
+                  hau: '%',
+                  giaTri: tyLe,
+                  onSua: (v) => settings.setTrau(tyLe: v),
+                ),
+              ),
+              const SizedBox(width: AppTheme.gapSm),
+              Expanded(
+                child: _oTrau(
+                  nhan: 'Giá bán',
+                  hau: 'đ/kg',
+                  giaTri: giaBan,
+                  onSua: (v) => settings.setTrau(giaBan: v),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.gapMd),
+          _dongTrau('Trấu mua vào',
+              '${formatWeight(klMua)} kg × ${formatMoney(giaMua)} đ', tienMuaUoc),
+          _dongTrau('Tỷ lệ thành phẩm', '${formatDecimal(tyLe)}%', null),
+          const Divider(height: 20),
+          _dongTrau(
+            'Trấu thành phẩm',
+            '${formatWeight(klMua)} kg × ${formatDecimal(tyLe)}%',
+            null,
+            soKg: klThanhPham,
+          ),
+          _dongTrau('Bán ước tính',
+              '${formatWeight(klThanhPham)} kg × ${formatMoney(giaBan)} đ', tienBanUoc),
+          const Divider(height: 20),
+          _dongTrau('Lãi ước tính', 'bán ước trừ mua ước', lai, dam: true),
+          if (klMua > 0 && (tienMuaThat - tienMuaUoc).abs() > 1) ...[
+            const SizedBox(height: AppTheme.gapSm),
+            NoticeBar(
+              icon: Icons.info_outline,
+              color: AppTheme.textMuted,
+              text: 'Tiền mua trấu thật trong sổ là ${formatMoney(tienMuaThat)} đ, '
+                  'khác với ${formatMoney(tienMuaUoc)} đ tính theo giá tham chiếu '
+                  '${formatMoney(giaMua)} đ/kg.',
+            ),
+          ],
+          const SizedBox(height: AppTheme.gapSm),
+          const Text(
+            'Đây là số ướm thử, không ghi vào sổ. Ba ô trên lưu tại máy này.',
+            style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _oTrau({
+    required String nhan,
+    required String hau,
+    required double giaTri,
+    required ValueChanged<double> onSua,
+  }) =>
+      _OSoTrau(nhan: nhan, hau: hau, giaTri: giaTri, onSua: onSua);
+
+  Widget _dongTrau(String nhan, String cachTinh, double? tien,
+          {bool dam = false, double? soKg}) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(nhan,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: dam ? FontWeight.w700 : FontWeight.w600,
+                        color: AppTheme.text,
+                      )),
+                  Text(cachTinh, style: AppTheme.meta.copyWith(fontSize: 11.5)),
+                ],
+              ),
+            ),
+            if (soKg != null)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(formatWeight(soKg),
+                      style: AppTheme.number(17, color: AppTheme.accent)),
+                  const SizedBox(width: 3),
+                  const Text('kg',
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textMuted)),
+                ],
+              )
+            else if (tien != null)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    formatMoney(tien),
+                    style: AppTheme.number(
+                      dam ? 18 : 15,
+                      color: dam
+                          ? (tien < 0 ? AppTheme.offline : AppTheme.primary)
+                          : AppTheme.text,
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  const Text('đ',
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textMuted)),
+                ],
+              ),
+          ],
+        ),
+      );
 
   String _khoangThoiGian() {
     final dau = _stock.firstDate;
@@ -936,6 +1140,65 @@ class _LocTheoDanhMuc extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Một ô số trong khối quy đổi trấu.
+///
+/// Ghi lại khi gõ xong — bấm Enter hoặc rời khỏi ô — chứ không theo từng phím:
+/// gõ dở "8000" mà lưu ngay từ số "8" thì mấy dòng bên dưới nhảy loạn.
+class _OSoTrau extends StatefulWidget {
+  const _OSoTrau({
+    required this.nhan,
+    required this.hau,
+    required this.giaTri,
+    required this.onSua,
+  });
+
+  final String nhan;
+  final String hau;
+  final double giaTri;
+  final ValueChanged<double> onSua;
+
+  @override
+  State<_OSoTrau> createState() => _OSoTrauState();
+}
+
+class _OSoTrauState extends State<_OSoTrau> {
+  late final _o = TextEditingController(text: soVaoO(widget.giaTri));
+
+  @override
+  void didUpdateWidget(_OSoTrau cu) {
+    super.didUpdateWidget(cu);
+    // Giá đổi từ nơi khác (mở lại màn hình) thì ô phải theo, nhưng không giật
+    // con trỏ của người đang gõ.
+    if (widget.giaTri != cu.giaTri && parseNumber(_o.text) != widget.giaTri) {
+      _o.text = soVaoO(widget.giaTri);
+    }
+  }
+
+  @override
+  void dispose() {
+    _o.dispose();
+    super.dispose();
+  }
+
+  void _ghi() {
+    final n = parseNumber(_o.text);
+    if (n != null && n >= 0 && n != widget.giaTri) widget.onSua(n);
+  }
+
+  @override
+  Widget build(BuildContext context) => Focus(
+        onFocusChange: (co) {
+          if (!co) _ghi();
+        },
+        child: TextField(
+          controller: _o,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(labelText: widget.nhan, suffixText: widget.hau),
+          onSubmitted: (_) => _ghi(),
+        ),
+      );
 }
 
 /// Nút mũi tên lùi/tới một tháng, cỡ chạm được bằng ngón cái.
