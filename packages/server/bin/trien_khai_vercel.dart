@@ -53,19 +53,27 @@ Future<void> main(List<String> arguments) async {
   final api = _VercelApi(vercelToken, teamId: teamId);
   try {
     final ai = await api.toiLaAi();
-    stdout.writeln('Đăng nhập với tài khoản: $ai${teamId == null ? '' : '  (đội $teamId)'}');
+    stdout.writeln('Đăng nhập với tài khoản: $ai'
+        '${api.teamId == null ? '' : '  (đội ${api.teamId})'}');
 
     stdout.writeln('\n1/4  Bảo đảm dự án "$duAn" tồn tại...');
-    await api.taoDuAnNeuChua(duAn);
+    final coDuAn = await api.taoDuAnNeuChua(duAn);
 
-    stdout.writeln('2/4  Đặt biến môi trường CANXE_TOKEN...');
-    await api.datBien(duAn, 'CANXE_TOKEN', canxeToken);
-
-    stdout.writeln('3/4  Gửi mã nguồn và chờ Vercel dựng...');
+    stdout.writeln('2/4  Gửi mã nguồn và chờ Vercel dựng...');
     final files = _docThuMuc(p.join(goc, 'vercel'));
     stdout.writeln('     ${files.length} file: '
         '${files.map((f) => f['file']).join(", ")}');
     final url = await api.trienKhai(duAn, files);
+
+    stdout.writeln('3/4  Đặt biến môi trường CANXE_TOKEN...');
+    await api.datBien(duAn, 'CANXE_TOKEN', canxeToken);
+    if (!coDuAn) {
+      // Biến môi trường chỉ ăn vào từ lần dựng SAU khi đặt. Dự án vừa mới do
+      // chính lệnh triển khai tạo ra, nên bản đang chạy chưa thấy biến — bỏ
+      // bước dựng lại này thì hàm sống nhưng lần gọi nào cũng trả 401.
+      stdout.writeln('     Dựng lại để bản đang chạy thấy biến vừa đặt...');
+      await api.trienKhai(duAn, files);
+    }
 
     stdout.writeln('4/4  Thử gọi hàm...');
     await _thuGoi('https://$url/api/sao-luu', canxeToken);
@@ -197,8 +205,10 @@ class _VercelApi {
   _VercelApi(this._token, {this.teamId});
 
   final String _token;
-  final String? teamId;
   final _http = http.Client();
+
+  /// Phạm vi gọi API. Để trống lúc đầu cũng được, [toiLaAi] sẽ tự điền.
+  String? teamId;
 
   Map<String, String> get _dau => {
         'authorization': 'Bearer $_token',
@@ -211,25 +221,41 @@ class _VercelApi {
         ...q,
       });
 
+  /// Hỏi xem token này là của ai, và **tự tìm ra phạm vi phải gọi API**.
+  ///
+  /// Tài khoản Vercel kiểu mới (họ gọi là "northstar") không còn phạm vi cá
+  /// nhân: mọi dự án nằm dưới một đội ngầm. Gọi API mà không kèm mã đội thì bị
+  /// từ chối 403 kèm câu "không có quyền tạo dự án" — nghe như sai chìa khoá
+  /// hay hết hạn mức, chứ không gợi ý gì tới chuyện thiếu phạm vi.
   Future<String> toiLaAi() async {
-    final res = await _http.get(_uri('/v2/user'), headers: _dau);
-    final data = _doc(res);
-    final u = data['user'] as Map?;
+    final u = _doc(await _http.get(_uri('/v2/user'), headers: _dau))['user'] as Map?;
+    teamId ??= u?['defaultTeamId']?.toString();
     return (u?['username'] ?? u?['email'] ?? '?').toString();
   }
 
-  Future<void> taoDuAnNeuChua(String ten) async {
+  /// Trả về `true` nếu dự án đã sẵn sàng nhận biến môi trường.
+  ///
+  /// Không tạo được thì **không dừng lại**: chính lệnh triển khai cũng tự tạo
+  /// dự án nếu chưa có. Có token chỉ đủ quyền triển khai mà không đủ quyền gọi
+  /// thẳng cửa tạo dự án — chặn ở đây là chặn oan.
+  Future<bool> taoDuAnNeuChua(String ten) async {
     final co = await _http.get(_uri('/v9/projects/$ten'), headers: _dau);
     if (co.statusCode == 200) {
       stdout.writeln('     Dự án đã có sẵn.');
-      return;
+      return true;
     }
-    _doc(await _http.post(
-      _uri('/v10/projects'),
+    final tao = await _http.post(
+      _uri('/v11/projects'),
       headers: _dau,
-      body: jsonEncode({'name': ten, 'framework': null}),
-    ));
-    stdout.writeln('     Đã tạo dự án mới.');
+      body: jsonEncode({'name': ten}),
+    );
+    if (tao.statusCode >= 200 && tao.statusCode < 300) {
+      stdout.writeln('     Đã tạo dự án mới.');
+      return true;
+    }
+    stdout.writeln('     Chưa tạo được dự án (HTTP ${tao.statusCode}) — '
+        'để lệnh triển khai tự tạo.');
+    return false;
   }
 
   /// Đặt biến môi trường; đã có thì sửa lại chứ không tạo trùng.
@@ -304,9 +330,24 @@ class _VercelApi {
 
     final loi = data['error'];
     final thongDiep = loi is Map ? loi['message']?.toString() : null;
-    throw _VercelLoi(
-      'HTTP ${res.statusCode} — ${thongDiep ?? utf8.decode(res.bodyBytes).trim()}',
-    );
+    final chiTiet = thongDiep ?? utf8.decode(res.bodyBytes).trim();
+
+    // Lời báo của Vercel cho trường hợp này là "You don't have permission to
+    // create a project" — nghe như tài khoản bị giới hạn hay hết hạn mức, chứ
+    // không hề gợi ý rằng chỉ cần tạo lại token với phạm vi rộng hơn.
+    if (res.statusCode == 403) {
+      throw _VercelLoi('''
+$chiTiet
+
+Token này chỉ có quyền ĐỌC: xem được danh sách dự án nhưng không tạo và không
+triển khai được.
+
+Tạo token khác ở https://vercel.com/account/tokens — phần Scope chọn đúng tài
+khoản (hoặc đội) chứ đừng chọn riêng một dự án, và đừng chọn loại chỉ đọc. Rồi
+dán đè vào .secrets/vercel-token.txt và chạy lại lệnh này.''');
+    }
+
+    throw _VercelLoi('HTTP ${res.statusCode} — $chiTiet');
   }
 
   void dispose() => _http.close();
