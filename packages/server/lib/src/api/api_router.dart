@@ -8,6 +8,9 @@ import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../auth/auth_service.dart';
+import '../backup/backup_archive.dart';
+import '../backup/backup_service.dart';
+import '../backup/backup_store.dart';
 import '../config.dart';
 import '../db/repository.dart';
 import '../scale/scale_service.dart';
@@ -34,6 +37,7 @@ class ApiRouter {
     required this.auth,
     this.scale,
     this.sync,
+    this.backup,
   });
 
   final ServerConfig config;
@@ -49,6 +53,9 @@ class ApiRouter {
 
   /// Chỉ có ở vai trò trạm cân.
   final SyncWorker? sync;
+
+  /// Sao lưu lên đám mây. Rỗng nghĩa là chưa bật.
+  final BackupService? backup;
 
   Handler get handler {
     final router = Router();
@@ -476,6 +483,63 @@ class ApiRouter {
       user: _user,
     ).attach(router);
 
+    // --------------------------------------------------------- sao lưu mây
+    //
+    // Chỉ tài khoản chủ. Bản sao lưu là toàn bộ cơ sở dữ liệu — lương từng
+    // người, sổ mua bán, giá vốn — nên quyền xem và quyền tải nó phải bằng
+    // quyền xem thứ nặng nhất bên trong, chứ không phải quyền của người quản lý
+    // kho.
+    router.get('/api/sao-luu/trang-thai', (Request request) {
+      final chan = _chanKhongPhaiChu(request);
+      if (chan != null) return chan;
+      final b = backup;
+      return _json({
+        'bat': config.backup.bat,
+        'san_sang': config.backup.sanSang,
+        'thieu': config.backup.thieuGi(),
+        'gio_chay': config.backup.gioChay,
+        'phut_chay': config.backup.phutChay,
+        'giu_ban': config.backup.giuBan,
+        if (b != null) ...b.state.toJson(),
+      });
+    });
+
+    router.post('/api/sao-luu/chay', (Request request) async {
+      final chan = _chanKhongPhaiChu(request);
+      if (chan != null) return chan;
+      final b = backup;
+      if (b == null) return _error('Máy chủ này chưa bật sao lưu.', 400);
+      try {
+        return _json({'ok': true, 'ten_ban': await b.chayNgay()});
+      } on BackupException catch (e) {
+        return _error(e.message, 400);
+      } catch (e) {
+        return _error('Sao lưu hỏng: $e', 500);
+      }
+    });
+
+    router.get('/api/sao-luu/danh-sach', (Request request) async {
+      final chan = _chanKhongPhaiChu(request);
+      if (chan != null) return chan;
+      if (!config.backup.sanSang) {
+        return _error('Chưa đủ cấu hình sao lưu.', 400);
+      }
+      final store = BackupStore(url: config.backup.url, token: config.backup.token);
+      try {
+        final ds = await store.lietKe();
+        return _json({
+          'ban': [
+            for (final b in ds)
+              {'ten': b.ten, 'bytes': b.bytes, 'so_phan': b.soPhan, 'meta': b.meta?.toJson()},
+          ],
+        });
+      } on BackupException catch (e) {
+        return _error(e.message, 502);
+      } finally {
+        store.dispose();
+      }
+    });
+
     router.get('/ws/scale', _scaleSocketHandler());
     if (config.isCentral) {
       router.get('/ws/station', _stationUplinkHandler());
@@ -628,6 +692,10 @@ class ApiRouter {
   }
 
   // ------------------------------------------------------------------ tiện ích
+
+  /// Chặn mọi tài khoản không phải chủ. `null` nghĩa là được đi tiếp.
+  Response? _chanKhongPhaiChu(Request request) =>
+      _user(request).isOwner ? null : _error('Chỉ tài khoản chủ mới xem được.', 403);
 
   static Future<Map<String, Object?>> _body(Request request) async {
     final text = await request.readAsString();

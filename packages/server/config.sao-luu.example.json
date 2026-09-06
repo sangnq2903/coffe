@@ -1,0 +1,27 @@
+{
+  "_huong_dan": "Sao lưu cơ sở dữ liệu lên đám mây. Chép file này thành config.sao-luu.json (đặt cạnh config.central.json) rồi điền. File config.sao-luu.json đã bị gitignore vì nó chứa chìa khoá.",
+
+  "_bat": "false = tắt hẳn, máy chủ chạy y như trước.",
+  "bat": true,
+
+  "_url": "Địa chỉ hàm nhận sao lưu sau khi triển khai lên Vercel.",
+  "url": "https://canxe-sao-luu.vercel.app/api/sao-luu",
+
+  "_token": "Chìa khoá để hàm đó biết đúng máy mình gửi lên. Phải trùng với biến môi trường CANXE_TOKEN đặt trên Vercel.",
+  "token": "",
+
+  "_mat_khau": "Câu mật khẩu mã hoá gói sao lưu. MẤT CÂU NÀY LÀ MẤT LUÔN DỮ LIỆU ĐÃ SAO LƯU — không có cửa sau nào mở được. Chép ra giấy, cất chỗ khác với cái máy chạy server. Đặt dài, khác hẳn mật khẩu đăng nhập.",
+  "mat_khau": "",
+
+  "_gio_chay": "Giờ và phút chạy sao lưu hằng ngày, theo giờ máy. Chọn lúc kho không cân xe.",
+  "gio_chay": 1,
+  "phut_chay": 30,
+
+  "_giu_ban": "Giữ bao nhiêu bản trên đám mây; quá số này thì bản cũ nhất bị xoá.",
+  "giu_ban": 30,
+
+  "_giu_ban_tai_cho": "Giữ thêm bao nhiêu bản ngay trên ổ đĩa máy chủ. Hỏng cơ sở dữ liệu lúc 8 giờ sáng mà mạng đứt thì bản ở ổ đĩa là thứ duy nhất dùng được ngay.",
+  "giu_ban_tai_cho": 7,
+
+  "thu_muc_tam": "data/sao-luu"
+}

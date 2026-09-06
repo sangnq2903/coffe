@@ -10,6 +10,7 @@ import 'package:shelf_static/shelf_static.dart';
 import 'api/api_router.dart';
 import 'api/reading_broker.dart';
 import 'auth/auth_service.dart';
+import 'backup/backup_service.dart';
 import 'config.dart';
 import 'db/database.dart';
 import 'db/repository.dart';
@@ -35,6 +36,7 @@ class ServerApp {
   late final AuthService _auth;
   late final PayrollService _payroll;
   late final TradeService _trades;
+  BackupService? _backup;
   ScaleService? _scale;
   SyncWorker? _sync;
   StationUplink? _uplink;
@@ -61,6 +63,13 @@ class ServerApp {
 
     _registerSelf();
 
+    _backup = BackupService(
+      config: config.backup,
+      database: _database,
+      may: config.effectiveStationCode,
+      thuMucGoc: Directory.current.path,
+    )..start();
+
     if (config.isStation) {
       await _startStationParts();
     }
@@ -75,6 +84,7 @@ class ServerApp {
       auth: _auth,
       scale: _scale,
       sync: _sync,
+      backup: _backup,
     );
 
     final handler = Pipeline()
@@ -226,6 +236,14 @@ class ServerApp {
       if (AppLog.path != null) '  Nhật ký      : ${AppLog.path}',
       if (_auth.needsSetup)
         '  >> Chưa có tài khoản nào. Mở trang web để tạo tài khoản quản lý tổng.',
+      if (config.backup.bat && config.backup.sanSang)
+        '  Sao lưu mây  : mỗi ngày '
+            '${config.backup.gioChay.toString().padLeft(2, '0')}:'
+            '${config.backup.phutChay.toString().padLeft(2, '0')}, '
+            'giữ ${config.backup.giuBan} bản',
+      if (config.backup.bat && !config.backup.sanSang)
+        '  >> Sao lưu mây đang bật nhưng thiếu: '
+            '${config.backup.thieuGi().join(", ")} trong config.sao-luu.json.',
       if (config.missingCentralAccount)
         '  >> Chưa khai central.username / central.password — trạm vẫn cân bình '
             'thường nhưng CHƯA đồng bộ được lên trung tâm.',
@@ -244,6 +262,7 @@ class ServerApp {
     await _uplink?.dispose();
     await _sync?.dispose();
     await _scale?.dispose();
+    _backup?.dispose();
     await _broker.dispose();
     _database.dispose();
     await AppLog.close();

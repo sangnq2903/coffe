@@ -1,0 +1,147 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>chay thu ham sao-luu</title>
+<pre id="o">dang chay...</pre>
+<script type="module">
+  import { kho, taoRes, taoReq, gioGia } from './stub.js';
+
+  // Nạp thẳng api/sao-luu.js — bản THẬT sẽ chạy trên Vercel, không phải bản
+  // chép tay. Trình duyệt không có `process`, `Buffer` hay gói @vercel/blob,
+  // nên chỉ tráo mấy dòng import sang kho giả rồi nạp lại. Sửa hàm thật là
+  // chạy lại chỗ này thấy ngay, không sợ hai bản trôi xa nhau.
+  const stub = new URL('./stub.js', location.href).href;
+  const nguon =
+    `import { process, Buffer } from '${stub}';
+` +
+    (await (await fetch('../api/sao-luu.js')).text())
+      .replace("'@vercel/blob'", `'${stub}'`)
+      .replace("'node:crypto'", `'${stub}'`);
+  const { default: handler } = await import(
+    URL.createObjectURL(new Blob([nguon], { type: 'text/javascript' }))
+  );
+
+  const ket = [];
+  const dat = (ten, dieuKien, them = '') =>
+    ket.push(`${dieuKien ? 'DAT ' : 'HONG'}  ${ten}${them ? '  -> ' + them : ''}`);
+
+  async function goi(method, query, body, token = 'token-thu') {
+    const res = taoRes();
+    await handler(taoReq(method, query, body, token), res);
+    return res;
+  }
+
+  const b64 = (bytes) => btoa(String.fromCharCode(...bytes));
+
+  async function day(ten, phan) {
+    for (let i = 0; i < phan.length; i++) {
+      const r = await goi('POST', { viec: 'phan', ban: ten, so: String(i) }, { du_lieu: b64(phan[i]) });
+      if (r.ma !== 200) throw new Error('day phan hong: ' + JSON.stringify(r.json()));
+    }
+    return goi('POST', { viec: 'xong', ban: ten }, {
+      so_phan: phan.length,
+      bytes: phan.reduce((t, p) => t + p.length, 0),
+      giu_ban: 3,
+      meta: { ten_goc: 'canxe-central.db', may: 'TRUNGTAM', luc: Date.now() },
+    });
+  }
+
+  try {
+    // --- cua truoc: khong chia khoa ---
+    let r = await goi('GET', {}, null, null);
+    dat('khong tham so, khong token -> 200 va khong lo gi', r.ma === 200 && r.json().ok === true);
+
+    r = await goi('GET', { viec: 'danh-sach' }, null, null);
+    dat('thieu token -> 401', r.ma === 401);
+
+    r = await goi('GET', { viec: 'danh-sach' }, null, 'token-sai-hoan-toan');
+    dat('sai token -> 401', r.ma === 401);
+
+    r = await goi('GET', { viec: 'danh-sach' }, null, 'token-th');
+    dat('token dai khac -> 401 chu khong no', r.ma === 401);
+
+    // --- day len ---
+    r = await day('20260101-010000-trungtam', [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])]);
+    dat('day 2 phan roi ghi mo ta -> 200', r.ma === 200, JSON.stringify(r.json()));
+    dat('kho co du 2 phan + manifest', kho.size === 3, [...kho.keys()].join(', '));
+
+    // --- dem lai so phan ---
+    r = await goi('POST', { viec: 'xong', ban: '20260101-010000-trungtam' }, { so_phan: 9 });
+    dat('khai 9 phan ma chi co 2 -> 400', r.ma === 400, r.json().loi);
+
+    // --- danh sach ---
+    r = await goi('GET', { viec: 'danh-sach' });
+    dat('danh sach thay 1 ban', r.ma === 200 && r.json().ban.length === 1);
+
+    // --- tai ve ---
+    r = await goi('GET', { viec: 'tai', ban: '20260101-010000-trungtam' });
+    dat('tai: bao 2 phan, 5 byte', r.ma === 200 && r.json().so_phan === 2 && r.json().bytes === 5);
+
+    r = await goi('GET', { viec: 'phan', ban: '20260101-010000-trungtam', so: '0' });
+    dat('lay phan 0 ra dung byte', r.ma === 200 && [...r.than].join() === '1,2,3', [...r.than].join());
+
+    r = await goi('GET', { viec: 'phan', ban: '20260101-010000-trungtam', so: '7' });
+    dat('phan khong co -> 404', r.ma === 404);
+
+    // --- ban chua ghi mo ta thi bi bo qua ---
+    await goi('POST', { viec: 'phan', ban: 'ban-do-dang', so: '0' }, { du_lieu: b64([9]) });
+    r = await goi('GET', { viec: 'danh-sach' });
+    dat('ban thieu mo ta khong hien trong danh sach', r.json().ban.length === 1);
+    r = await goi('GET', { viec: 'tai', ban: 'ban-do-dang' });
+    dat('ban thieu mo ta khong tai duoc -> 404', r.ma === 404);
+
+    // --- giu 3 ban moi nhat ---
+    for (const t of ['20260102-010000-x', '20260103-010000-x', '20260104-010000-x']) {
+      await day(t, [new Uint8Array([1])]);
+    }
+    r = await goi('GET', { viec: 'danh-sach' });
+    const ten = r.json().ban.map((b) => b.ten);
+    dat('giu_ban=3 -> chi con 3 ban moi nhat', ten.length === 3, ten.join(', '));
+    dat('ban cu nhat bi xoa', !ten.includes('20260101-010000-trungtam'));
+    dat('danh sach xep moi nhat truoc', ten[0] === '20260104-010000-x', ten[0]);
+
+    // --- xoa ---
+    r = await goi('DELETE', { ban: '20260104-010000-x' });
+    dat('xoa mot ban -> 200', r.ma === 200);
+    r = await goi('DELETE', { ban: '20260104-010000-x' });
+    dat('xoa ban khong co -> 404', r.ma === 404);
+
+    // --- ten ban khong duoc tin ---
+    r = await goi('GET', { viec: 'tai', ban: '../../bi-mat' });
+    dat('ten ban co ../ bi chan', r.ma === 500 && /không hợp lệ/.test(r.json().loi), r.json().loi);
+    r = await goi('GET', { viec: 'phan', ban: 'ok', so: 'abc' });
+    dat('so phan khong phai so bi chan', r.ma === 500);
+
+
+    // --- rac cua lan day bi dut ---
+    kho.clear();
+    await day('20260201-010000-x', [new Uint8Array([1])]);
+    await goi('POST', { viec: 'phan', ban: 'dang-day-do', so: '0' }, { du_lieu: b64([9]) });
+    await day('20260202-010000-x', [new Uint8Array([1])]);
+    r = await goi('GET', { viec: 'danh-sach' });
+    dat('thu muc do dang khong chiem suat trong han giu', r.json().ban.length === 2, r.json().ban.map(b=>b.ten).join(', '));
+    dat('thu muc do dang moi thi con nguyen', [...kho.keys()].some(k => k.includes('dang-day-do')));
+
+    gioGia.lech = 2 * 24 * 60 * 60 * 1000; // gia vo la rac tu hai hom truoc
+    kho.clear();
+    await goi('POST', { viec: 'phan', ban: 'rac-cu', so: '0' }, { du_lieu: b64([9]) });
+    gioGia.lech = 0;
+    r = await day('20260203-010000-x', [new Uint8Array([1])]);
+    dat('rac qua mot ngay thi bi hot di', r.json().xoa.includes('rac-cu'), JSON.stringify(r.json().xoa));
+
+    // --- thieu kho blob ---
+    const { process: pr } = await import('./stub.js');
+    pr.env.BLOB_READ_WRITE_TOKEN = '';
+    r = await goi('GET', { viec: 'suc-khoe' });
+    dat('chua noi kho Blob -> noi ro thieu bien nao', r.ma === 500 && /BLOB_READ_WRITE_TOKEN/.test(r.json().loi));
+    pr.env.BLOB_READ_WRITE_TOKEN = 'blob-thu';
+
+    r = await goi('GET', { viec: 'suc-khoe' });
+    dat('suc khoe -> 200 va dem dung so ban', r.ma === 200 && r.json().so_ban === 1, JSON.stringify(r.json()));
+  } catch (e) {
+    ket.push('NO   ' + (e && e.stack ? e.stack : e));
+  }
+
+  const hong = ket.filter((k) => !k.startsWith('DAT')).length;
+  document.getElementById('o').textContent =
+    ket.join('\n') + `\n\n${ket.length - hong}/${ket.length} DAT` + (hong ? `  — ${hong} HONG` : '  — TAT CA DAT');
+</script>

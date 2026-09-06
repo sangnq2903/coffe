@@ -38,6 +38,20 @@ abstract final class PasswordHasher {
     return base64Url.encode(derived);
   }
 
+  /// Sinh khoá mã hoá từ một câu mật khẩu.
+  ///
+  /// Dùng chung lò PBKDF2 với việc băm mật khẩu đăng nhập vì bài toán giống
+  /// nhau: biến một câu người nhớ được thành chuỗi byte khó dò. Khác ở chỗ trả
+  /// về byte thô để đưa thẳng vào thuật toán mã hoá, và cho chọn độ dài — bản
+  /// sao lưu cần 64 byte để tách làm hai khoá riêng (một để mã hoá, một để ký).
+  static Uint8List deriveKey(
+    String passphrase,
+    List<int> salt, {
+    required int iterations,
+    int length = 32,
+  }) =>
+      _pbkdf2(utf8.encode(passphrase), salt, iterations, length);
+
   /// Kiểm mật khẩu người dùng nhập với chuỗi băm đã lưu.
   static bool verify({
     required String password,

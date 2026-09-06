@@ -31,3 +31,14 @@ logs/
 
 # May chu da bien dich - sinh lai bang scripts/build-web.ps1
 packages/server/build/
+
+# Cau hinh sao luu: chua chia khoa kho luu tru va mat khau ma hoa
+packages/server/config.sao-luu.json
+
+# Chia khoa trien khai Vercel
+.secrets/
+vercel/.vercel/
+node_modules/
+
+# Goi sao luu giu tai cho
+*.canxe

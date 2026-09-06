@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:canxe_shared/canxe_shared.dart';
 import 'package:path/path.dart' as p;
 
+import 'backup/backup_config.dart';
+
 /// Vai trò của tiến trình server.
 enum ServerRole {
   /// Máy chủ trung tâm (100.76.81.118): giữ dữ liệu gộp của mọi kho.
@@ -134,6 +136,7 @@ class ServerConfig {
     this.databasePath = 'data/canxe.db',
     this.webRoot = 'web',
     this.scale = const ScaleConfig(),
+    this.backup = const BackupConfig(),
   });
 
   factory ServerConfig.fromJson(Map<String, Object?> json) {
@@ -176,7 +179,8 @@ class ServerConfig {
     if (raw is! Map) {
       throw StateError('File cấu hình "$path" không phải đối tượng JSON hợp lệ.');
     }
-    return ServerConfig.fromJson(raw.cast<String, Object?>());
+    return ServerConfig.fromJson(raw.cast<String, Object?>())
+        .copyWith(backup: BackupConfig.load(path));
   }
 
   final ServerRole role;
@@ -210,6 +214,10 @@ class ServerConfig {
   final String webRoot;
   final ScaleConfig scale;
 
+  /// Sao lưu lên đám mây. Đọc từ file riêng `config.sao-luu.json` đặt cạnh file
+  /// cấu hình này, vì nó chứa chìa khoá và mật khẩu — xem [BackupConfig].
+  final BackupConfig backup;
+
   bool get isCentral => role == ServerRole.central;
 
   bool get isStation => role == ServerRole.station;
@@ -240,6 +248,7 @@ class ServerConfig {
     String? databasePath,
     String? webRoot,
     ScaleConfig? scale,
+    BackupConfig? backup,
   }) =>
       ServerConfig(
         role: role ?? this.role,
@@ -257,6 +266,7 @@ class ServerConfig {
         databasePath: databasePath ?? this.databasePath,
         webRoot: webRoot ?? this.webRoot,
         scale: scale ?? this.scale,
+        backup: backup ?? this.backup,
       );
 
   /// Thiếu tài khoản đăng nhập lên trung tâm.

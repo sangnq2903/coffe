@@ -20,6 +20,7 @@ dependencies:
   sqlite3: ^2.4.6
   web_socket_channel: ^3.0.1
   excel: ^4.0.6
+  pointycastle: ^4.0.0
 
 dev_dependencies:
   lints: ^5.0.0
