@@ -31,3 +31,6 @@ logs/
 
 # May chu da bien dich - sinh lai bang scripts/build-web.ps1
 packages/server/build/
+
+# Chia khoa rieng cua may nay
+.secrets/

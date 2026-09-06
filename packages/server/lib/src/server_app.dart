@@ -10,6 +10,7 @@ import 'package:shelf_static/shelf_static.dart';
 import 'api/api_router.dart';
 import 'api/reading_broker.dart';
 import 'auth/auth_service.dart';
+import 'backup/data_transfer.dart';
 import 'config.dart';
 import 'db/database.dart';
 import 'db/repository.dart';
@@ -35,6 +36,7 @@ class ServerApp {
   late final AuthService _auth;
   late final PayrollService _payroll;
   late final TradeService _trades;
+  late final DataTransferService _duLieu;
   ScaleService? _scale;
   SyncWorker? _sync;
   StationUplink? _uplink;
@@ -55,6 +57,11 @@ class ServerApp {
     _payroll = PayrollService(_repo.payroll);
     _trades = TradeService(_repo.trades, _repo);
     _auth = AuthService(_repo);
+    _duLieu = DataTransferService(
+      database: _database,
+      repo: _repo,
+      may: config.effectiveStationCode,
+    );
     // Chạm vào khoá ký ngay lúc khởi động để nó được sinh và ghi lại một lần,
     // thay vì sinh lúc có người đăng nhập giữa ca.
     _auth.secret;
@@ -73,6 +80,7 @@ class ServerApp {
       payroll: _payroll,
       trades: _trades,
       auth: _auth,
+      duLieu: _duLieu,
       scale: _scale,
       sync: _sync,
     );

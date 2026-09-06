@@ -547,6 +547,49 @@ vẫn là số của cả kỳ thì đọc ra kết luận sai.
 - **Mất tín hiệu là báo ngay.** Quá 5 giây không có khung mới, màn hình chuyển
   sang trạng thái mất kết nối thay vì giữ số cũ.
 
+### Xuất và nhập dữ liệu
+
+Ở **Cá nhân > Sao lưu dữ liệu** (chỉ tài khoản chủ) có hai nút. File xuất ra
+chứa toàn bộ cơ sở dữ liệu — lương từng người, sổ mua bán, giá vốn, và cả chuỗi
+băm mật khẩu của mọi tài khoản — nên quyền tải nó bằng quyền xem thứ nặng nhất
+bên trong, không phải quyền quản lý một kho.
+
+**Xuất ra file.** Đặt mật khẩu thì file được nén và mã hoá AES-256, ký
+HMAC-SHA256; để trống thì ra đúng file SQLite, mở được bằng mọi công cụ. Nên đặt
+mật khẩu nếu định cất ở USB hay gửi qua mạng. *Quên mật khẩu là mất luôn file,
+không có cửa sau nào.*
+
+Bản chụp dùng `VACUUM INTO` chứ không chép file: cơ sở dữ liệu đang bật WAL nên
+những thay đổi mới nhất còn nằm ở file `-wal` bên cạnh — chép mỗi `.db` là ra
+bản thiếu giao dịch gần đây, mà mở lên vẫn không báo lỗi gì.
+
+**Nhập từ file.** Máy chủ đọc thử và cho xem trước file có bao nhiêu phiếu, của
+ngày nào, rồi mới hỏi. Nhập là **gộp chứ không đè**: bản ghi trong file chỉ thay
+bản đang có khi nó mới hơn, đúng luật đang dùng cho đồng bộ trạm ↔ trung tâm.
+Nhờ vậy nhập nhầm một bản cũ không xoá mất việc làm hôm nay. Máy chủ tự cất một
+bản chụp vào `data/sao-luu/truoc-khi-nhap-*.db` trước khi gộp.
+
+Dùng được cho: dựng lại máy mới, gộp dữ liệu hai máy, lấy lại thứ lỡ xoá ở máy
+này mà máy kia còn.
+
+**Điều nút Nhập KHÔNG làm được:** nó không xoá bản ghi. Xoá một phiếu hôm nay
+rồi nhập bản sao lưu tuần trước thì phiếu vẫn xoá — vì thao tác xoá mới hơn nên
+nó thắng. Muốn quay về đúng nguyên trạng một ngày nào đó thì phải thay hẳn file:
+
+```powershell
+# Dừng máy chủ trước, nếu không file đang bị khoá
+Stop-ScheduledTask -TaskName CanXe-TrungTam
+cd packages\server\data
+Rename-Item canxe-central.db canxe-central.db.cu   # GIỮ LẠI, đừng xoá
+Remove-Item canxe-central.db-wal, canxe-central.db-shm -ErrorAction SilentlyContinue
+Copy-Item <file-da-xuat>.db canxe-central.db
+Start-ScheduledTask -TaskName CanXe-TrungTam
+```
+
+Cách này chỉ dùng được với file xuất **không đặt mật khẩu**. Và phải xoá cả hai
+file `-wal`/`-shm` cũ: để lại thì SQLite ghép chúng vào file mới và ra dữ liệu
+lẫn lộn của hai bản.
+
 ---
 
 ## 7. Kiểm thử
@@ -598,3 +641,7 @@ New-NetFirewallRule -DisplayName "Can xe 9080" -Direction Inbound -Protocol TCP 
 | POST | `/api/tickets/<id>/second-weigh` | Ghi cân lần 2 và chốt phiếu |
 | POST | `/api/tickets/<id>/cancel` | Huỷ phiếu |
 | GET/POST | `/api/sync/pull`, `/api/sync/push` | Đồng bộ giữa trạm và trung tâm |
+| GET | `/api/du-lieu/tom-tat` | Số dòng từng bảng và cỡ dữ liệu (chỉ tài khoản chủ) |
+| GET | `/api/du-lieu/xuat` | Tải toàn bộ cơ sở dữ liệu; mật khẩu đặt ở tiêu đề `x-mat-khau` (base64) |
+| POST | `/api/du-lieu/xem-truoc` | Đọc thử một file, không ghi gì |
+| POST | `/api/du-lieu/nhap` | Gộp dữ liệu từ file vào máy chủ |

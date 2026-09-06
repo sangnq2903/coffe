@@ -8,6 +8,7 @@ export 'src/auth/session_token.dart';
 export 'src/models/app_user.dart';
 export 'src/models/cost_item.dart';
 export 'src/models/customer.dart';
+export 'src/models/du_lieu.dart';
 export 'src/models/payroll/attendance.dart';
 export 'src/models/payroll/crew.dart';
 export 'src/models/payroll/payroll_entry.dart';

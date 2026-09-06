@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../core/theme.dart';
 import '../state/server_connection.dart';
+import '../widgets/backup_card.dart';
 
 /// Màn hình *Cá nhân*: thông tin tài khoản, đổi mật khẩu, đăng xuất, và phần
 /// quản lý tài khoản dành riêng cho quản lý tổng.
@@ -78,6 +79,12 @@ class _AccountScreenState extends State<AccountScreen> {
         if (user.isAdmin) ...[
           const SizedBox(height: AppTheme.gapMd),
           _usersCard(),
+        ],
+        // Bản xuất chứa cả bảng lương lẫn sổ mua bán, nên để cùng một cửa với
+        // sổ mua bán: chỉ tài khoản chủ.
+        if (user.isOwner) ...[
+          const SizedBox(height: AppTheme.gapMd),
+          const BackupCard(),
         ],
       ],
     );

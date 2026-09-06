@@ -59,6 +59,7 @@ void main() {
       payroll: PayrollService(repo.payroll),
       trades: TradeService(repo.trades, repo),
       auth: auth,
+      duLieu: DataTransferService(database: database, repo: repo, may: 'KHO01'),
     );
     handler = const Pipeline().addMiddleware(authMiddleware(auth)).addHandler(router.handler);
 

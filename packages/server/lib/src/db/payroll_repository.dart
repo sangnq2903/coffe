@@ -428,6 +428,29 @@ class PayrollRepository {
   /// lại, nên không cắt được dữ liệu chấm công theo kho — nghĩa là máy trạm nào
   /// cũng giữ bản sao dữ liệu lương của cả công ty. Đây là đánh đổi có chủ ý:
   /// bảng lương của một người phải cộng được xuyên kho.
+  /// Đọc **hết** bảng chấm công, không giới hạn số dòng.
+  ///
+  /// Khác [changesSince] ở chỗ không có `LIMIT`. Dùng cho việc xuất dữ liệu:
+  /// mượn hàm kia rồi truyền limit thật to thì vẫn là một con số đoán, mà đoán
+  /// hụt ở đây nghĩa là bản xuất thiếu bảng lương của mấy tháng cũ — thiếu im
+  /// lặng, file vẫn mở được, chỉ tới lúc cần tra mới biết.
+  PayrollSyncData toanBo() {
+    List<T> load<T>(String table, T Function(Map<String, Object?>) parse) => _db
+        .select('SELECT * FROM $table ORDER BY updated_at')
+        .map((r) => parse(r))
+        .toList();
+
+    return PayrollSyncData(
+      crews: load('doan', Crew.fromJson),
+      phases: load('giai_doan_luong', WagePhase.fromJson),
+      bands: load('muc_luong', WageBand.fromJson),
+      rates: load('gia_luong', WageRate.fromJson),
+      workers: load('nhan_vien', Worker.fromJson),
+      attendances: load('cham_cong', Attendance.fromJson),
+      entries: load('so_tien', PayrollEntry.fromJson),
+    );
+  }
+
   PayrollSyncData changesSince(DateTime? since, {int limit = 500}) {
     final ms = timeToMillis(since ?? DateTime.fromMillisecondsSinceEpoch(0));
 

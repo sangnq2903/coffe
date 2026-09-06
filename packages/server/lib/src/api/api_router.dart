@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:canxe_shared/canxe_shared.dart';
 import 'package:shelf/shelf.dart';
@@ -8,6 +9,7 @@ import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../auth/auth_service.dart';
+import '../backup/data_transfer.dart';
 import '../config.dart';
 import '../db/repository.dart';
 import '../scale/scale_service.dart';
@@ -32,6 +34,7 @@ class ApiRouter {
     required this.payroll,
     required this.trades,
     required this.auth,
+    required this.duLieu,
     this.scale,
     this.sync,
   });
@@ -43,6 +46,9 @@ class ApiRouter {
   final PayrollService payroll;
   final TradeService trades;
   final AuthService auth;
+
+  /// Xuất và nhập cơ sở dữ liệu.
+  final DataTransferService duLieu;
 
   /// Chỉ có ở vai trò trạm cân.
   final ScaleService? scale;
@@ -476,6 +482,55 @@ class ApiRouter {
       user: _user,
     ).attach(router);
 
+    // ------------------------------------------------------ xuất/nhập dữ liệu
+    //
+    // Chỉ tài khoản chủ. File xuất ra là **toàn bộ** cơ sở dữ liệu — lương từng
+    // người, sổ mua bán, giá vốn, và cả chuỗi băm mật khẩu của mọi tài khoản.
+    // Quyền tải nó về phải bằng quyền xem thứ nặng nhất bên trong, chứ không
+    // phải quyền của người quản lý một kho.
+    router.get('/api/du-lieu/tom-tat', (Request request) {
+      final chan = _chanKhongPhaiChu(request);
+      return chan ?? _guard(() => _json(duLieu.tomTat().toJson()));
+    });
+
+    router.get('/api/du-lieu/xuat', (Request request) {
+      final chan = _chanKhongPhaiChu(request);
+      if (chan != null) return chan;
+      return _guard(() {
+        final kq = duLieu.xuat(matKhau: _matKhau(request));
+        return Response.ok(
+          kq.duLieu,
+          headers: {
+            'content-type': 'application/octet-stream',
+            'content-disposition': 'attachment; filename="${kq.tenFile}"',
+            'content-length': '${kq.duLieu.length}',
+            // Tên file có dấu thời gian nên không đụng nhau, nhưng vẫn cấm
+            // cache: bản xuất là ảnh chụp một thời điểm, dùng lại bản cũ trong
+            // cache là cầm nhầm dữ liệu của hôm trước mà không biết.
+            'cache-control': 'no-store',
+          },
+        );
+      });
+    });
+
+    router.post('/api/du-lieu/xem-truoc', (Request request) async {
+      final chan = _chanKhongPhaiChu(request);
+      if (chan != null) return chan;
+      final bytes = await _bytes(request);
+      return _guard(() => _json(
+            duLieu.xemTruoc(bytes, matKhau: _matKhau(request)).toJson(),
+          ));
+    });
+
+    router.post('/api/du-lieu/nhap', (Request request) async {
+      final chan = _chanKhongPhaiChu(request);
+      if (chan != null) return chan;
+      final bytes = await _bytes(request);
+      return _guard(() => _json(
+            duLieu.nhap(bytes, matKhau: _matKhau(request)).toJson(),
+          ));
+    });
+
     router.get('/ws/scale', _scaleSocketHandler());
     if (config.isCentral) {
       router.get('/ws/station', _stationUplinkHandler());
@@ -628,6 +683,35 @@ class ApiRouter {
   }
 
   // ------------------------------------------------------------------ tiện ích
+
+  /// Chặn mọi tài khoản không phải chủ. `null` nghĩa là được đi tiếp.
+  Response? _chanKhongPhaiChu(Request request) => _user(request).isOwner
+      ? null
+      : _error('Xuất và nhập dữ liệu chỉ dành cho tài khoản chủ.', 403);
+
+  /// Mật khẩu đi trong tiêu đề, mã hoá base64.
+  ///
+  /// Không đặt trong địa chỉ vì địa chỉ bị ghi nguyên vào nhật ký máy chủ. Và
+  /// phải base64 vì tiêu đề HTTP chỉ chở được ký tự Latin — mật khẩu tiếng Việt
+  /// có dấu mà nhét thẳng vào là hỏng ngay ở tầng mạng.
+  static String? _matKhau(Request request) {
+    final raw = request.headers['x-mat-khau'];
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return utf8.decode(base64.decode(raw));
+    } catch (_) {
+      throw BusinessException('Ô mật khẩu gửi lên bị hỏng, thử nhập lại.');
+    }
+  }
+
+  static Future<List<int>> _bytes(Request request) async {
+    final bb = BytesBuilder(copy: false);
+    await for (final phan in request.read()) {
+      bb.add(phan);
+    }
+    if (bb.isEmpty) throw BusinessException('Chưa chọn file để nhập.');
+    return bb.takeBytes();
+  }
 
   static Future<Map<String, Object?>> _body(Request request) async {
     final text = await request.readAsString();

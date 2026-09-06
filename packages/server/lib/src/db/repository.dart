@@ -504,6 +504,34 @@ class Repository {
     );
   }
 
+  /// Đọc **toàn bộ** cơ sở dữ liệu ra một gói, không giới hạn số dòng và không
+  /// cắt theo kho.
+  ///
+  /// Dùng cho việc xuất/nhập dữ liệu. Cố ý không mượn [changesSince] với một
+  /// `limit` thật to: con số nào cũng là con số đoán, mà đoán hụt ở đây nghĩa
+  /// là bản xuất thiếu phiếu cân cũ — thiếu trong im lặng, file vẫn mở bình
+  /// thường, tới lúc cần tra mới biết là mất.
+  ///
+  /// Cũng không cắt theo phạm vi kho của tài khoản: đây là bản sao lưu của cả
+  /// máy, và cửa API đã chặn chỉ tài khoản chủ mới gọi được.
+  SyncPayload toanBoDuLieu() {
+    List<T> load<T>(String table, T Function(Map<String, Object?>) parse) => _db
+        .select('SELECT * FROM $table ORDER BY updated_at')
+        .map((r) => parse(r))
+        .toList();
+
+    return SyncPayload(
+      users: load('nguoi_dung', AppUser.fromJson),
+      customers: load('customers', Customer.fromJson),
+      vehicles: load('vehicles', Vehicle.fromJson),
+      goodsTypes: load('goods_types', GoodsType.fromJson),
+      tickets: load('tickets', WeighTicket.fromJson),
+      trades: load('giao_dich', Trade.fromJson),
+      payroll: payroll.toanBo(),
+      serverTime: DateTime.now(),
+    );
+  }
+
   /// Các bản ghi do máy này tạo/sửa mà chưa đẩy lên trung tâm.
   SyncPayload dirtyChanges({int limit = 300}) {
     List<T> load<T>(String table, T Function(Map<String, Object?>) parse) => _db

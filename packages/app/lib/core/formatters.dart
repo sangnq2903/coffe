@@ -17,6 +17,12 @@ final DateFormat _dateFormat = DateFormat('dd/MM/yyyy', 'vi_VN');
 String formatWeight(double? value) =>
     value == null ? '—' : _weightFormat.format(value.roundToDouble());
 
+/// Số đếm — số bản ghi, số phiếu, số người. Cùng cách chấm phân cách hàng
+/// nghìn với khối lượng, nhưng tách riêng vì đây không phải cân nặng: mượn
+/// [formatWeight] cho số đếm là chỗ dễ hiểu nhầm khi đọc lại mã.
+String formatInt(num? value) =>
+    value == null ? '—' : _weightFormat.format(value.round());
+
 String formatDecimal(double? value) =>
     value == null ? '—' : _decimalFormat.format(value);
 

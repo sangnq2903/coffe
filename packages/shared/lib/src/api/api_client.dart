@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../json_utils.dart';
 import '../models/app_user.dart';
 import '../models/customer.dart';
+import '../models/du_lieu.dart';
 import '../models/goods_type.dart';
 import '../models/scale_reading.dart';
 import '../models/station.dart';
@@ -157,6 +158,98 @@ class ApiClient {
       );
     }
     return response.bodyBytes;
+  }
+
+  // ------------------------------------------------------- xuất/nhập dữ liệu
+
+  /// Vài con số về cơ sở dữ liệu của máy chủ đang nối tới.
+  Future<DuLieuTomTat> duLieuTomTat() async =>
+      DuLieuTomTat.fromJson(await _getMap('/api/du-lieu/tom-tat'));
+
+  /// Tải toàn bộ cơ sở dữ liệu về. Có [matKhau] thì file được mã hoá.
+  ///
+  /// Trả về cả tên file do máy chủ đặt, để bản tải xuống mang đúng dấu thời
+  /// gian và mã máy — người ta hay có nhiều bản trong cùng một thư mục.
+  Future<({Uint8List bytes, String tenFile})> xuatDuLieu({String? matKhau}) async {
+    final uri = _uri('/api/du-lieu/xuat');
+    final http.Response res;
+    try {
+      res = await _http
+          .get(uri, headers: {..._headers, ..._dauMatKhau(matKhau)})
+          .timeout(_thoiHanDaiHon);
+    } on TimeoutException {
+      throw ApiException('Máy chủ không phản hồi khi xuất dữ liệu.', uri: uri);
+    } catch (e) {
+      throw ApiException('Không gọi được máy chủ: $e', uri: uri);
+    }
+    if (res.statusCode >= 400) {
+      // Máy chủ từ chối thì thân phản hồi là JSON báo lỗi, không phải file.
+      throw ApiException(_loiTuThan(res.body, res.statusCode),
+          statusCode: res.statusCode, uri: uri);
+    }
+    return (bytes: res.bodyBytes, tenFile: _tenFileTuDau(res) ?? 'canxe.db');
+  }
+
+  /// Đọc thử một file mà **không ghi gì** vào máy chủ.
+  Future<DuLieuTomTat> xemTruocDuLieu(Uint8List bytes, {String? matKhau}) async =>
+      DuLieuTomTat.fromJson(await _guiFile('/api/du-lieu/xem-truoc', bytes, matKhau));
+
+  /// Gộp dữ liệu trong file vào cơ sở dữ liệu của máy chủ.
+  Future<KetQuaNhapDuLieu> nhapDuLieu(Uint8List bytes, {String? matKhau}) async =>
+      KetQuaNhapDuLieu.fromJson(await _guiFile('/api/du-lieu/nhap', bytes, matKhau));
+
+  Future<Map<String, Object?>> _guiFile(
+      String path, Uint8List bytes, String? matKhau) async {
+    final uri = _uri(path);
+    final http.Response res;
+    try {
+      res = await _http
+          .post(
+            uri,
+            headers: {
+              'content-type': 'application/octet-stream',
+              if (hasToken) 'authorization': 'Bearer $authToken',
+              ..._dauMatKhau(matKhau),
+            },
+            body: bytes,
+          )
+          .timeout(_thoiHanDaiHon);
+    } on TimeoutException {
+      throw ApiException('Máy chủ không phản hồi khi nhập dữ liệu.', uri: uri);
+    } catch (e) {
+      throw ApiException('Không gọi được máy chủ: $e', uri: uri);
+    }
+
+    final text = utf8.decode(res.bodyBytes, allowMalformed: true);
+    if (res.statusCode >= 400) {
+      throw ApiException(_loiTuThan(text, res.statusCode),
+          statusCode: res.statusCode, uri: uri);
+    }
+    final raw = text.trim().isEmpty ? null : jsonDecode(text);
+    return raw is Map ? raw.cast<String, Object?>() : <String, Object?>{};
+  }
+
+  /// Xuất và nhập chạm vào cả cơ sở dữ liệu nên lâu hơn hẳn mọi lời gọi khác:
+  /// phải chụp lại, nén, mã hoá, rồi gộp từng bảng. Dùng hạn chờ thường ngày ở
+  /// đây thì kho vài chục nghìn phiếu sẽ luôn báo "máy chủ không phản hồi",
+  /// trong khi máy chủ vẫn đang làm việc bình thường.
+  static const Duration _thoiHanDaiHon = Duration(minutes: 5);
+
+  /// Mật khẩu đi trong tiêu đề, mã hoá base64.
+  ///
+  /// Không đặt trong địa chỉ vì địa chỉ bị ghi nguyên vào nhật ký máy chủ. Và
+  /// phải base64 vì tiêu đề HTTP chỉ chở được ký tự Latin — mật khẩu tiếng Việt
+  /// có dấu mà nhét thẳng vào là hỏng ngay ở tầng mạng.
+  static Map<String, String> _dauMatKhau(String? matKhau) =>
+      matKhau == null || matKhau.isEmpty
+          ? const {}
+          : {'x-mat-khau': base64.encode(utf8.encode(matKhau))};
+
+  /// Lấy tên file máy chủ đặt trong tiêu đề `content-disposition`.
+  static String? _tenFileTuDau(http.Response res) {
+    final raw = res.headers['content-disposition'];
+    if (raw == null) return null;
+    return RegExp('filename="([^"]+)"').firstMatch(raw)?.group(1);
   }
 
   void close() => _http.close();
