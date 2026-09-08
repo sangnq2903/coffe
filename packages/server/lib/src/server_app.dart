@@ -10,6 +10,7 @@ import 'package:shelf_static/shelf_static.dart';
 import 'api/api_router.dart';
 import 'api/reading_broker.dart';
 import 'auth/auth_service.dart';
+import 'backup/auto_backup.dart';
 import 'backup/data_transfer.dart';
 import 'config.dart';
 import 'db/database.dart';
@@ -37,6 +38,7 @@ class ServerApp {
   late final PayrollService _payroll;
   late final TradeService _trades;
   late final DataTransferService _duLieu;
+  late final AutoBackupService _tuDong;
   ScaleService? _scale;
   SyncWorker? _sync;
   StationUplink? _uplink;
@@ -62,6 +64,11 @@ class ServerApp {
       repo: _repo,
       may: config.effectiveStationCode,
     );
+    _tuDong = AutoBackupService(
+      database: _database,
+      duLieu: _duLieu,
+      may: config.effectiveStationCode,
+    )..start();
     // Chạm vào khoá ký ngay lúc khởi động để nó được sinh và ghi lại một lần,
     // thay vì sinh lúc có người đăng nhập giữa ca.
     _auth.secret;
@@ -81,6 +88,7 @@ class ServerApp {
       trades: _trades,
       auth: _auth,
       duLieu: _duLieu,
+      tuDong: _tuDong,
       scale: _scale,
       sync: _sync,
     );
@@ -252,6 +260,7 @@ class ServerApp {
     await _uplink?.dispose();
     await _sync?.dispose();
     await _scale?.dispose();
+    _tuDong.dispose();
     await _broker.dispose();
     _database.dispose();
     await AppLog.close();

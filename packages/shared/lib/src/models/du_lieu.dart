@@ -79,3 +79,73 @@ class KetQuaNhapDuLieu {
 
   int get tongThemMoi => themMoi.values.fold(0, (t, e) => t + e);
 }
+
+/// Một bản sao lưu đang nằm trong thư mục tự động.
+class BanTuDong {
+  const BanTuDong({required this.ten, required this.bytes, required this.luc});
+
+  factory BanTuDong.fromJson(Map<String, Object?> json) => BanTuDong(
+        ten: asString(json['ten']),
+        bytes: asInt(json['bytes']),
+        luc: asTimeOrNull(json['luc']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+      );
+
+  final String ten;
+  final int bytes;
+  final DateTime luc;
+
+  String get coFile => bytes >= 1024 * 1024
+      ? '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB'
+      : '${(bytes / 1024).round()} KB';
+}
+
+/// Thiết lập và tình trạng của phần tự động sao lưu trên máy chủ.
+class TuDongSaoLuu {
+  const TuDongSaoLuu({
+    this.bat = false,
+    this.thuMuc = '',
+    this.giuBan = 2,
+    this.coMatKhau = false,
+    this.dangChay = false,
+    this.dangCho = false,
+    this.lanCuoi,
+    this.tenFileCuoi,
+    this.loi,
+    this.soLanChay = 0,
+    this.file = const [],
+  });
+
+  factory TuDongSaoLuu.fromJson(Map<String, Object?> json) => TuDongSaoLuu(
+        bat: asBool(json['bat']),
+        thuMuc: asString(json['thu_muc']),
+        giuBan: asInt(json['giu_ban'], fallback: 2),
+        coMatKhau: asBool(json['co_mat_khau']),
+        dangChay: asBool(json['dang_chay']),
+        dangCho: asBool(json['dang_cho']),
+        lanCuoi: asTimeOrNull(json['lan_cuoi']),
+        tenFileCuoi: asStringOrNull(json['ten_file_cuoi']),
+        loi: asStringOrNull(json['loi']),
+        soLanChay: asInt(json['so_lan_chay']),
+        file: asMapList(json['file']).map(BanTuDong.fromJson).toList(),
+      );
+
+  final bool bat;
+
+  /// Thư mục trên ổ đĩa **của máy chạy máy chủ**, không phải máy đang mở app.
+  final String thuMuc;
+  final int giuBan;
+
+  /// Đã đặt mật khẩu hay chưa. Máy chủ không bao giờ trả mật khẩu về.
+  final bool coMatKhau;
+
+  final bool dangChay;
+
+  /// Có thay đổi chưa kịp sao lưu, đang chờ tới lượt.
+  final bool dangCho;
+
+  final DateTime? lanCuoi;
+  final String? tenFileCuoi;
+  final String? loi;
+  final int soLanChay;
+  final List<BanTuDong> file;
+}

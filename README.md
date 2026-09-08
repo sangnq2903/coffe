@@ -572,6 +572,44 @@ bản chụp vào `data/sao-luu/truoc-khi-nhap-*.db` trước khi gộp.
 Dùng được cho: dựng lại máy mới, gộp dữ liệu hai máy, lấy lại thứ lỡ xoá ở máy
 này mà máy kia còn.
 
+### Tự động sao lưu
+
+Cùng chỗ đó có thẻ **Tự động sao lưu**. Bật lên, chọn một thư mục, và từ đó máy
+chủ tự cất bản sao mỗi khi dữ liệu đổi — không phải nhớ bấm gì.
+
+| Thiết lập | Ý nghĩa |
+|---|---|
+| Thư mục | Đường dẫn đầy đủ **trên máy chạy máy chủ**, ví dụ `D:\SaoLuuCanXe`. Nên là ổ đĩa khác với ổ chứa dữ liệu |
+| Giữ tối đa mấy bản | Quá số này thì bản cũ nhất bị xoá. Mặc định 2 |
+| Mật khẩu | Để trống thì ra file SQLite trần; có mật khẩu thì file được mã hoá |
+
+Thiết lập nằm trên máy chủ chứ không phải trên máy mở app, và **không đi theo
+luồng đồng bộ**: đường dẫn `D:\SaoLuu` ở máy văn phòng thì sang máy kho có thể
+không có ổ D nào cả.
+
+**Nó không chụp ngay sau từng lần lưu, mà gom lại.** Hết khoảng nửa phút không ai
+ghi gì nữa thì chụp một bản. Lý do: một lượt đồng bộ từ máy trạm ghi hàng trăm
+dòng — chụp lại cả cơ sở dữ liệu sau từng dòng thì máy chủ chỉ còn làm mỗi việc
+đó và bàn cân đứng chờ. Tệ hơn nữa, với hạn giữ 2 bản thì hai bản ấy sẽ cách nhau
+vài giây, mất dữ liệu lúc 10 giờ thì bản gần nhất là 9 giờ 59 — chẳng cứu được
+gì. Phòng khi kho bận cả ngày không lúc nào ngơi, quá 10 phút mà vẫn còn thay
+đổi treo là chụp luôn, không chờ nữa.
+
+Vài chi tiết đáng biết:
+
+- Thay đổi được bắt bằng **móc báo của chính SQLite**, nên mọi đường ghi đều
+  tính, kể cả đường viết sau này.
+- Ghi ra tên tạm rồi mới đổi tên. Mất điện giữa chừng chỉ để lại file `.dangghi`
+  chứ không tạo ra một bản cụt mang đúng tên bản hợp lệ.
+- Chỉ dọn file **do chính máy đó sinh ra** (`canxe-<mã máy>-*`). Thư mục chung có
+  file của người khác thì không đụng tới.
+- Lúc lưu thiết lập, máy chủ thử tạo thư mục và ghi một file nhỏ vào đó. Đường
+  dẫn gõ sai bị chặn ngay, thay vì nhận bừa rồi im lặng không sao lưu gì.
+
+Đây là **bản sao trên cùng một máy**, nên nó cứu được xoá nhầm, hỏng cơ sở dữ
+liệu, cài đè phần mềm. Nó **không** cứu được cháy máy hay mất trộm — việc đó vẫn
+phải xuất tay một bản đem đi chỗ khác, hoặc trỏ thư mục vào một ổ ngoài.
+
 **Điều nút Nhập KHÔNG làm được:** nó không xoá bản ghi. Xoá một phiếu hôm nay
 rồi nhập bản sao lưu tuần trước thì phiếu vẫn xoá — vì thao tác xoá mới hơn nên
 nó thắng. Muốn quay về đúng nguyên trạng một ngày nào đó thì phải thay hẳn file:
@@ -645,3 +683,5 @@ New-NetFirewallRule -DisplayName "Can xe 9080" -Direction Inbound -Protocol TCP 
 | GET | `/api/du-lieu/xuat` | Tải toàn bộ cơ sở dữ liệu; mật khẩu đặt ở tiêu đề `x-mat-khau` (base64) |
 | POST | `/api/du-lieu/xem-truoc` | Đọc thử một file, không ghi gì |
 | POST | `/api/du-lieu/nhap` | Gộp dữ liệu từ file vào máy chủ |
+| GET/POST | `/api/du-lieu/tu-dong` | Xem và đổi thiết lập tự động sao lưu |
+| POST | `/api/du-lieu/tu-dong/chay` | Chụp một bản ngay, không chờ tới lượt |

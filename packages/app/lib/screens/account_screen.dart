@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../core/theme.dart';
 import '../state/server_connection.dart';
+import '../widgets/auto_backup_card.dart';
 import '../widgets/backup_card.dart';
 
 /// Màn hình *Cá nhân*: thông tin tài khoản, đổi mật khẩu, đăng xuất, và phần
@@ -85,6 +86,8 @@ class _AccountScreenState extends State<AccountScreen> {
         if (user.isOwner) ...[
           const SizedBox(height: AppTheme.gapMd),
           const BackupCard(),
+          const SizedBox(height: AppTheme.gapMd),
+          const AutoBackupCard(),
         ],
       ],
     );

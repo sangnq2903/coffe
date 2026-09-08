@@ -9,6 +9,7 @@ import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../auth/auth_service.dart';
+import '../backup/auto_backup.dart';
 import '../backup/data_transfer.dart';
 import '../config.dart';
 import '../db/repository.dart';
@@ -35,6 +36,7 @@ class ApiRouter {
     required this.trades,
     required this.auth,
     required this.duLieu,
+    required this.tuDong,
     this.scale,
     this.sync,
   });
@@ -49,6 +51,9 @@ class ApiRouter {
 
   /// Xuất và nhập cơ sở dữ liệu.
   final DataTransferService duLieu;
+
+  /// Tự động sao lưu ra thư mục trên ổ đĩa của máy chủ.
+  final AutoBackupService tuDong;
 
   /// Chỉ có ở vai trò trạm cân.
   final ScaleService? scale;
@@ -531,12 +536,67 @@ class ApiRouter {
           ));
     });
 
+    // Tự động sao lưu: thiết lập nằm trên máy chủ vì đường dẫn là thư mục
+    // trên ổ đĩa của chính máy đó, không phải của cái máy đang mở trình duyệt.
+    router.get('/api/du-lieu/tu-dong', (Request request) {
+      final chan = _chanKhongPhaiChu(request);
+      return chan ??
+          _guard(() => _json({
+                ...tuDong.caiDat.toJson(),
+                ...tuDong.state.toJson(),
+              }));
+    });
+
+    router.post('/api/du-lieu/tu-dong', (Request request) async {
+      final chan = _chanKhongPhaiChu(request);
+      if (chan != null) return chan;
+      final body = await _body(request);
+      return _guard(() {
+        final moi = tuDong.luuCaiDat(body);
+        return _json({...moi.toJson(), ...tuDong.state.toJson()});
+      });
+    });
+
+    router.post('/api/du-lieu/tu-dong/chay', (Request request) async {
+      final chan = _chanKhongPhaiChu(request);
+      if (chan != null) return chan;
+      try {
+        final ten = await tuDong.chayNgay();
+        // Trả về đủ cả thiết lập lẫn tình trạng, giống hai cửa kia. Thiếu phần
+        // thiết lập thì màn hình đọc `bat` ra rỗng và hiện thành "đang tắt"
+        // ngay sau khi vừa chụp xong.
+        return _json({
+          'ok': true,
+          'ten': ten,
+          ...tuDong.caiDat.toJson(),
+          ...tuDong.state.toJson(),
+        });
+      } on BusinessException catch (e) {
+        return _error(e.message, 400);
+      } catch (e) {
+        return _error('Sao lưu hỏng: $e', 500);
+      }
+    });
+
     router.get('/ws/scale', _scaleSocketHandler());
     if (config.isCentral) {
       router.get('/ws/station', _stationUplinkHandler());
     }
 
-    return router.call;
+    // Lưới đỡ cuối cùng. `_guard` chỉ bọc được phần đồng bộ của mỗi tuyến, mà
+    // việc đọc thân yêu cầu lại nằm trước đó và là bất đồng bộ — lỗi ném từ đấy
+    // rơi thẳng ra ngoài và biến một yêu cầu gửi sai thành "Internal Server
+    // Error". Bọc ở đây thì mọi tuyến, kể cả tuyến viết sau này, đều trả về mã
+    // đúng mà không phải nhớ tự bọc.
+    return (Request request) async {
+      try {
+        return await router.call(request);
+      } on BusinessException catch (e) {
+        return _error(e.message, 400);
+      } on AuthException catch (e) {
+        return _error(e.message, e.statusCode);
+      }
+    };
   }
 
   Station _selfStation() => Station(
@@ -714,10 +774,26 @@ class ApiRouter {
   }
 
   static Future<Map<String, Object?>> _body(Request request) async {
-    final text = await request.readAsString();
+    // Đọc và phân tích trong cùng một khối bắt lỗi. Thân yêu cầu hỏng — sai mã
+    // ký tự, hay JSON viết thiếu — là lỗi của bên gửi, mà để rơi tự do thì nó
+    // thành "Internal Server Error": người dùng tưởng máy chủ sập, còn người
+    // sửa thì đi tìm nhầm chỗ.
+    final String text;
+    try {
+      text = await request.readAsString();
+    } on FormatException {
+      throw BusinessException(
+        'Nội dung gửi lên không phải chữ UTF-8 hợp lệ. Nếu gọi bằng dòng lệnh '
+        'thì phải ghi rõ mã UTF-8 cho phần thân yêu cầu.',
+      );
+    }
     if (text.trim().isEmpty) return {};
-    final decoded = jsonDecode(text);
-    return decoded is Map ? decoded.cast<String, Object?>() : {};
+    try {
+      final decoded = jsonDecode(text);
+      return decoded is Map ? decoded.cast<String, Object?>() : {};
+    } on FormatException catch (e) {
+      throw BusinessException('Nội dung gửi lên không phải JSON hợp lệ: ${e.message}');
+    }
   }
 
   static Response _json(Object? data, {int status = 200}) => Response(

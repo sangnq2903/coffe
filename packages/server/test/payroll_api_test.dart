@@ -51,6 +51,7 @@ void main() {
     final auth = AuthService(repo, iterations: 500);
 
     const config = ServerConfig(role: ServerRole.central, stationCode: 'TRUNGTAM');
+    final duLieuThu = DataTransferService(database: database, repo: repo, may: 'KHO01');
     final router = ApiRouter(
       config: config,
       repo: repo,
@@ -59,7 +60,8 @@ void main() {
       payroll: PayrollService(repo.payroll),
       trades: TradeService(repo.trades, repo),
       auth: auth,
-      duLieu: DataTransferService(database: database, repo: repo, may: 'KHO01'),
+      duLieu: duLieuThu,
+      tuDong: AutoBackupService(database: database, duLieu: duLieuThu, may: 'KHO01'),
     );
     handler = const Pipeline().addMiddleware(authMiddleware(auth)).addHandler(router.handler);
 

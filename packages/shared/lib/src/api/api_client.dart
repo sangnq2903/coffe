@@ -235,6 +235,34 @@ class ApiClient {
   /// trong khi máy chủ vẫn đang làm việc bình thường.
   static const Duration _thoiHanDaiHon = Duration(minutes: 5);
 
+  // ------------------------------------------------------ tự động sao lưu
+
+  /// Thiết lập và tình trạng tự động sao lưu của **máy chủ đang nối tới**.
+  Future<TuDongSaoLuu> tuDongSaoLuu() async =>
+      TuDongSaoLuu.fromJson(await _getMap('/api/du-lieu/tu-dong'));
+
+  /// Ghi thiết lập mới.
+  ///
+  /// [matKhau] để `null` nghĩa là **giữ nguyên mật khẩu đang có** — máy chủ
+  /// không trả mật khẩu về nên màn hình không thể gửi lại nó. Muốn bỏ mã hoá
+  /// thì truyền chuỗi rỗng.
+  Future<TuDongSaoLuu> luuTuDongSaoLuu({
+    required bool bat,
+    required String thuMuc,
+    required int giuBan,
+    String? matKhau,
+  }) async =>
+      TuDongSaoLuu.fromJson(await _postMap('/api/du-lieu/tu-dong', {
+        'bat': bat,
+        'thu_muc': thuMuc,
+        'giu_ban': giuBan,
+        if (matKhau != null) 'mat_khau': matKhau,
+      }));
+
+  /// Chụp một bản ngay, không chờ tới lượt.
+  Future<TuDongSaoLuu> chayTuDongSaoLuu() async =>
+      TuDongSaoLuu.fromJson(await _postMap('/api/du-lieu/tu-dong/chay', const {}));
+
   /// Mật khẩu đi trong tiêu đề, mã hoá base64.
   ///
   /// Không đặt trong địa chỉ vì địa chỉ bị ghi nguyên vào nhật ký máy chủ. Và

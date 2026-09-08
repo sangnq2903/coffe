@@ -59,6 +59,7 @@ void main() {
     auth = AuthService(repo, iterations: 500);
 
     const config = ServerConfig(role: ServerRole.central, stationCode: 'TRUNGTAM');
+    final duLieuThu = DataTransferService(database: database, repo: repo, may: 'KHO01');
     final router = ApiRouter(
       config: config,
       repo: repo,
@@ -67,7 +68,8 @@ void main() {
       payroll: PayrollService(repo.payroll),
       trades: TradeService(repo.trades, repo),
       auth: auth,
-      duLieu: DataTransferService(database: database, repo: repo, may: 'KHO01'),
+      duLieu: duLieuThu,
+      tuDong: AutoBackupService(database: database, duLieu: duLieuThu, may: 'KHO01'),
     );
     handler = const Pipeline().addMiddleware(authMiddleware(auth)).addHandler(router.handler);
 
@@ -110,6 +112,39 @@ void main() {
   tearDown(() {
     database.dispose();
     tempDir.deleteSync(recursive: true);
+  });
+
+  group('Thân yêu cầu hỏng', () {
+    test('không phải UTF-8 thì báo 400 chứ không phải lỗi máy chủ', () async {
+      // Thân hỏng là lỗi của bên gửi. Để nó rơi tự do thành 500 thì người dùng
+      // tưởng máy chủ sập, còn người sửa thì đi tìm nhầm chỗ.
+      final res = await handler(Request(
+        'POST',
+        Uri.parse('http://may-chu/api/tickets'),
+        headers: {
+          'content-type': 'application/json',
+          'authorization': 'Bearer $tokenTong',
+        },
+        // 0xC3 mở đầu một ký tự hai byte nhưng thiếu byte sau.
+        body: [...'{"plate_no":"47C-1","goods_name":"'.codeUnits, 0xC3, ...'"}'.codeUnits],
+      ));
+      expect(res.statusCode, 400);
+      expect(await res.readAsString(), contains('UTF-8'));
+    });
+
+    test('JSON viết thiếu cũng ra 400', () async {
+      final res = await handler(Request(
+        'POST',
+        Uri.parse('http://may-chu/api/tickets'),
+        headers: {
+          'content-type': 'application/json',
+          'authorization': 'Bearer $tokenTong',
+        },
+        body: '{"plate_no": ',
+      ));
+      expect(res.statusCode, 400);
+      expect(await res.readAsString(), contains('JSON'));
+    });
   });
 
   group('Cửa đăng nhập', () {

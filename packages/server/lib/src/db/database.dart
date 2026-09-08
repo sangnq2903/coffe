@@ -109,6 +109,26 @@ class AppDatabase {
       _createV7();
       db.execute('PRAGMA user_version = 7;');
     }
+    if (version < 8) {
+      _createV8();
+      db.execute('PRAGMA user_version = 8;');
+    }
+  }
+
+  /// Phiên bản 8: thiết lập riêng của từng máy.
+  ///
+  /// **Cố ý không nằm trong luồng đồng bộ.** Thứ để ở đây là đường dẫn thư mục
+  /// trên ổ đĩa của chính máy này — `E:\SaoLuu` ở máy văn phòng thì sang máy
+  /// kho có thể không có ổ E nào cả. Đồng bộ nó đi là mỗi máy ghi đè thiết lập
+  /// của máy kia, rồi cả hai cùng sao lưu vào một chỗ không tồn tại.
+  void _createV8() {
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS cai_dat (
+        khoa     TEXT PRIMARY KEY,
+        gia_tri  TEXT,
+        sua_luc  INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
   }
 
   /// Phiên bản 7: định mức chi phí theo đ/kg cho từng loại hàng.
