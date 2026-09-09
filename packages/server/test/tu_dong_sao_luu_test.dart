@@ -290,5 +290,25 @@ void main() {
 
       expect(tuDong.state.dangCho, isTrue);
     });
+
+    test('ghi vào sync_state hay stations không tính là có thay đổi', () async {
+      // Trạm ghi sync_state mỗi vòng đồng bộ (mặc định 20 giây, nhặt hơn mốc
+      // chờ yên lặng 30 giây), và trung tâm ghi stations mỗi lần trạm báo còn
+      // sống. Nếu tính hai bảng này thì đồng hồ chờ yên lặng không bao giờ
+      // chạm tới, sao lưu chỉ còn trông vào mốc chặn trên 10 phút.
+      bat();
+      tuDong.start();
+
+      repo.setSyncMark('central_pull_mark', DateTime.now());
+      repo.upsertStation(Station(
+        code: 'KHO01',
+        name: 'Kho 1',
+        online: true,
+        lastSeenAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ));
+
+      expect(tuDong.state.dangCho, isFalse);
+    });
   });
 }

@@ -131,6 +131,16 @@ class AutoBackupService {
   /// Nhịp soi. Chỉ so vài mốc thời gian nên rẻ, không đụng vào ổ đĩa.
   static const Duration _nhip = Duration(seconds: 5);
 
+  /// Bảng không tính là "có thay đổi" cần sao lưu.
+  ///
+  /// `sync_state` được trạm ghi lại mỗi vòng đồng bộ (mặc định 20 giây một
+  /// lần, kể cả khi không kéo được gì mới) và `stations` được trung tâm ghi
+  /// lại mỗi lần một trạm báo còn sống. Cả hai đều nhặt hơn mốc [_choLang] 30
+  /// giây, nên nếu tính luôn thì đồng hồ chờ "yên lặng" không bao giờ chạm
+  /// tới — sao lưu chỉ còn trông vào mốc chặn trên 10 phút, trong khi màn
+  /// hình lại hứa "hết nửa phút không ai ghi gì".
+  static const _bangBoQua = {'sync_state', 'stations'};
+
   StreamSubscription<void>? _theoDoi;
   Timer? _dongHo;
 
@@ -164,7 +174,8 @@ class AutoBackupService {
     // Dùng bản đồng bộ để một giao dịch ghi 500 dòng không dồn 500 sự kiện vào
     // hàng đợi. Việc trong này chỉ là gán một mốc thời gian — không đụng cơ sở
     // dữ liệu, đúng như tài liệu của gói yêu cầu.
-    _theoDoi = database.db.updatesSync.listen((_) {
+    _theoDoi = database.db.updatesSync.listen((u) {
+      if (_bangBoQua.contains(u.tableName)) return;
       _thayDoiLuc = DateTime.now();
       _treoTu ??= _thayDoiLuc;
     });
