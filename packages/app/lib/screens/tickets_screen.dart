@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../core/formatters.dart';
 import '../core/theme.dart';
 import '../core/ticket_printer.dart';
+import '../state/data_refresh_controller.dart';
 import '../state/server_connection.dart';
 import '../widgets/ticket_tile.dart';
 import 'ticket_detail_sheet.dart';
@@ -37,10 +38,17 @@ class _TicketsScreenState extends State<TicketsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    // Máy khác trong kho ghi gì thì máy này tự tải lại, không phải bấm làm mới.
+    _huyLamMoi =
+        context.read<DataRefreshController>().dangKy(const ['tickets'], _load);
   }
+
+  /// Huỷ đăng ký nhận tín hiệu; gọi trong `dispose`.
+  VoidCallback? _huyLamMoi;
 
   @override
   void dispose() {
+    _huyLamMoi?.call();
     _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();

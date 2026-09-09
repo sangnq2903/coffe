@@ -8,6 +8,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_static/shelf_static.dart';
 
 import 'api/api_router.dart';
+import 'api/change_broker.dart';
 import 'api/reading_broker.dart';
 import 'auth/auth_service.dart';
 import 'backup/auto_backup.dart';
@@ -33,6 +34,8 @@ class ServerApp {
   late final AppDatabase _database;
   late final Repository _repo;
   late final ReadingBroker _broker;
+  late final ChangeBroker _changes;
+  StreamSubscription<void>? _theoDoiGhi;
   late final TicketService _ticketService;
   late final AuthService _auth;
   late final PayrollService _payroll;
@@ -55,6 +58,14 @@ class ServerApp {
     _repo = Repository(_database);
     _repo.seedGoodsTypesIfEmpty();
     _broker = ReadingBroker();
+    _changes = ChangeBroker();
+    // Nghe thẳng móc báo của SQLite: mọi câu INSERT/UPDATE/DELETE đều qua đây,
+    // kể cả đường ghi viết sau này. Cắm tay vào từng hàm lưu thì lần sau thêm
+    // một đường mới là quên, và màn hình ở kho lặng lẽ hiện dữ liệu cũ.
+    //
+    // Bản đồng bộ để một giao dịch ghi 500 dòng không dồn 500 sự kiện vào hàng
+    // đợi; việc trong này chỉ là thêm một chuỗi vào tập hợp.
+    _theoDoiGhi = _database.db.updatesSync.listen((u) => _changes.ghiNhan(u.tableName));
     _ticketService = TicketService(_repo, defaultStationCode: config.effectiveStationCode);
     _payroll = PayrollService(_repo.payroll);
     _trades = TradeService(_repo.trades, _repo);
@@ -89,6 +100,7 @@ class ServerApp {
       auth: _auth,
       duLieu: _duLieu,
       tuDong: _tuDong,
+      changes: _changes,
       scale: _scale,
       sync: _sync,
     );
@@ -261,6 +273,8 @@ class ServerApp {
     await _sync?.dispose();
     await _scale?.dispose();
     _tuDong.dispose();
+    await _theoDoiGhi?.cancel();
+    await _changes.dispose();
     await _broker.dispose();
     _database.dispose();
     await AppLog.close();

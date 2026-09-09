@@ -2,6 +2,7 @@
 library canxe_server;
 
 export 'src/api/api_router.dart' show ApiRouter, appVersion, authMiddleware, corsMiddleware;
+export 'src/api/change_broker.dart';
 export 'src/api/reading_broker.dart';
 export 'src/auth/auth_service.dart';
 export 'src/backup/auto_backup.dart';

@@ -18,6 +18,7 @@ import '../scale/win32_serial.dart';
 import '../service/payroll_service.dart';
 import '../service/ticket_service.dart';
 import '../service/trade_service.dart';
+import 'change_broker.dart';
 import 'payroll_router.dart';
 import 'trade_router.dart';
 import '../sync/sync_worker.dart';
@@ -37,6 +38,7 @@ class ApiRouter {
     required this.auth,
     required this.duLieu,
     required this.tuDong,
+    required this.changes,
     this.scale,
     this.sync,
   });
@@ -54,6 +56,9 @@ class ApiRouter {
 
   /// Tự động sao lưu ra thư mục trên ổ đĩa của máy chủ.
   final AutoBackupService tuDong;
+
+  /// Phát tín hiệu "dữ liệu vừa đổi" cho mọi máy đang mở app.
+  final ChangeBroker changes;
 
   /// Chỉ có ở vai trò trạm cân.
   final ScaleService? scale;
@@ -578,6 +583,7 @@ class ApiRouter {
       }
     });
 
+    router.get('/ws/thay-doi', _changeSocketHandler());
     router.get('/ws/scale', _scaleSocketHandler());
     if (config.isCentral) {
       router.get('/ws/station', _stationUplinkHandler());
@@ -624,6 +630,42 @@ class ApiRouter {
   /// Máy chủ trung tâm giữ luồng của nhiều kho cùng lúc, nên bắt buộc phải lọc
   /// theo mã trạm; gửi tất cả sang một client sẽ làm màn hình nhảy số của kho
   /// khác.
+  /// `/ws/thay-doi` — máy chủ báo về tên bảng vừa đổi để app tự tải lại.
+  ///
+  /// Chỉ gửi tên bảng, không gửi dữ liệu: app nhận được thì gọi lại đúng cửa
+  /// API cũ, nơi luật phân quyền đã có sẵn và chỉ có một bản.
+  Handler _changeSocketHandler() => (Request request) {
+        // Người không phải chủ thì bỏ sổ mua bán ra khỏi tín hiệu: họ không mở
+        // được màn hình đó, báo cho họ chỉ tổ bắt tải lại vô ích — và cũng là
+        // để lộ rằng ai đó đang ghi sổ.
+        final laChu = _user(request).isOwner;
+        return webSocketHandler(
+          (WebSocketChannel socket, _) => _bindChangeSocket(socket, laChu),
+        )(request);
+      };
+
+  void _bindChangeSocket(WebSocketChannel socket, bool laChu) {
+    final sub = changes.thayDoi.listen((bang) {
+      final loc = laChu ? bang : bang.where((b) => b != 'giao_dich').toSet();
+      if (loc.isEmpty) return;
+      try {
+        socket.sink.add(jsonEncode({
+          'bang': loc.toList()..sort(),
+          'luc': timeToMillis(DateTime.now()),
+        }));
+      } catch (_) {
+        // Ống đã đóng; phần bên dưới sẽ dọn.
+      }
+    });
+
+    socket.stream.listen(
+      (_) {},
+      onDone: sub.cancel,
+      onError: (_) => sub.cancel(),
+      cancelOnError: true,
+    );
+  }
+
   Handler _scaleSocketHandler() => (Request request) {
         final requested = request.url.queryParameters['station']?.toUpperCase();
         final stationCode = (requested == null || requested.isEmpty)

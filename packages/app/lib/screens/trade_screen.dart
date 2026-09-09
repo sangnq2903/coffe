@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../core/formatters.dart';
 import '../core/tai_file.dart';
 import '../core/theme.dart';
+import '../state/data_refresh_controller.dart';
 import '../state/server_connection.dart';
 
 /// Ba ô ràng buộc nhau bởi phép nhân: khối lượng × đơn giá = thành tiền.
@@ -109,10 +110,17 @@ class _TradeScreenState extends State<TradeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    // Máy khác trong kho ghi gì thì máy này tự tải lại, không phải bấm làm mới.
+    _huyLamMoi =
+        context.read<DataRefreshController>().dangKy(const ['giao_dich'], _load);
   }
+
+  /// Huỷ đăng ký nhận tín hiệu; gọi trong `dispose`.
+  VoidCallback? _huyLamMoi;
 
   @override
   void dispose() {
+    _huyLamMoi?.call();
     _search.dispose();
     super.dispose();
   }

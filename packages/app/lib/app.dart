@@ -7,6 +7,7 @@ import 'core/theme.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_shell.dart';
 import 'state/server_connection.dart';
+import 'state/data_refresh_controller.dart';
 import 'state/live_weight_controller.dart';
 
 class CanXeApp extends StatelessWidget {
@@ -23,6 +24,7 @@ class CanXeApp extends StatelessWidget {
           create: (_) => ServerConnection(settings)..connect(),
         ),
         ChangeNotifierProvider(create: (_) => LiveWeightController()),
+        ChangeNotifierProvider(create: (_) => DataRefreshController()),
       ],
       child: MaterialApp(
         title: 'Cân xe',

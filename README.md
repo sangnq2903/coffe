@@ -572,6 +572,41 @@ bản chụp vào `data/sao-luu/truoc-khi-nhap-*.db` trước khi gộp.
 Dùng được cho: dựng lại máy mới, gộp dữ liệu hai máy, lấy lại thứ lỡ xoá ở máy
 này mà máy kia còn.
 
+### Máy này ghi, máy kia thấy ngay
+
+Máy chủ mở một kênh WebSocket `/ws/thay-doi`. Mỗi khi cơ sở dữ liệu bị ghi, nó
+báo **tên bảng vừa đổi** cho mọi máy đang mở app, và màn hình tự gọi lại API để
+lấy dữ liệu mới. Hai người ở hai máy cùng nhìn danh sách phiếu cân thì thấy như
+nhau, không ai phải bấm làm mới.
+
+Ba điều quyết định cách làm này:
+
+- **Chỉ gửi tên bảng, không gửi dữ liệu.** Gửi kèm bản ghi thì phải dựng lại
+  toàn bộ luật phân quyền trong kênh socket một lần nữa — trạm nào xem được kho
+  nào, ai xem được sổ mua bán — và hai bản luật ấy sẽ trôi xa nhau. Máy nhận tín
+  hiệu thì gọi lại đúng cửa API cũ, nơi luật đã có sẵn và chỉ có một bản.
+
+- **Gom tín hiệu hai lần.** Móc báo của SQLite bắn ra từng dòng: một lượt đồng bộ
+  ghi 500 dòng là 500 tín hiệu. Máy chủ gom trong 0,4 giây rồi mới phát; app chặn
+  thêm, hai lượt tải lại cách nhau ít nhất 1,5 giây. Không gom thì cả kho tải
+  lại hàng trăm lần và danh sách nhấp nháy trước mắt người đang đọc.
+
+- **Nối lại là tải lại toàn bộ.** Lúc mất mạng máy chủ vẫn ghi tiếp mà không ai
+  nghe. Nối lại mà chỉ chờ tín hiệu kế tiếp thì màn hình đứng ở dữ liệu cũ —
+  đúng cái hỏng mà tính năng này sinh ra để chữa. Nên mỗi lần nối lại được, app
+  coi như mọi thứ đều có thể đã đổi và tải lại hết.
+
+Bảng `sync_state`, `ticket_counters`, `cai_dat` bị loại khỏi tín hiệu: chúng đổi
+liên tục theo nhịp đồng bộ mà không màn hình nào hiện. Sổ mua bán chỉ báo cho
+tài khoản chủ.
+
+Màn hình đang nghe: Cân xe, Phiếu cân, Sổ mua bán, Chấm công, Đoàn. Thêm màn
+hình khác thì đăng ký một dòng trong `initState`:
+
+```dart
+_huyLamMoi = context.read<DataRefreshController>().dangKy(const ['tickets'], _load);
+```
+
 ### Tự động sao lưu
 
 Cùng chỗ đó có thẻ **Tự động sao lưu**. Bật lên, chọn một thư mục, và từ đó máy
@@ -674,6 +709,7 @@ New-NetFirewallRule -DisplayName "Can xe 9080" -Direction Inbound -Protocol TCP 
 | GET | `/api/scale/current?station=` | Số cân hiện tại |
 | WS | `/ws/scale?station=` | Luồng số cân realtime |
 | WS | `/ws/station` | Trạm đẩy số cân lên trung tâm (chỉ có ở central) |
+| WS | `/ws/thay-doi` | Máy chủ báo tên bảng vừa đổi để app tự tải lại |
 | GET/POST | `/api/customers`, `/api/vehicles`, `/api/goods-types` | Danh mục |
 | GET/POST | `/api/tickets` | Danh sách và lập phiếu (cân lần 1) |
 | POST | `/api/tickets/<id>/second-weigh` | Ghi cân lần 2 và chốt phiếu |

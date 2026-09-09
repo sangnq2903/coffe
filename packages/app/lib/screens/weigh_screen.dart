@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../core/formatters.dart';
 import '../core/theme.dart';
 import '../core/ticket_printer.dart';
+import '../state/data_refresh_controller.dart';
 import '../state/live_weight_controller.dart';
 import '../state/server_connection.dart';
 import '../widgets/station_picker.dart';
@@ -55,13 +56,24 @@ class _WeighScreenState extends State<WeighScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadAll());
-    // Danh sách có thể được máy khác trong cùng kho tạo ra, nên phải tự làm mới
-    // định kỳ chứ không chỉ sau thao tác của chính máy này.
-    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) => _loadTickets());
+
+    // Máy khác trong cùng kho lập phiếu thì máy này tự tải lại ngay. Chỉ tải
+    // lại danh sách, không đụng vào form đang gõ dở.
+    _huyLamMoi =
+        context.read<DataRefreshController>().dangKy(const ['tickets'], _loadTickets);
+
+    // Vẫn giữ một nhịp tự làm mới, nhưng thưa hẳn: giờ nó chỉ còn là lưới đỡ
+    // cho trường hợp kênh tín hiệu chết mà không ai hay. Trước đây 10 giây một
+    // lần vì đó là cách duy nhất biết máy khác vừa ghi gì.
+    _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) => _loadTickets());
   }
+
+  /// Huỷ đăng ký nhận tín hiệu; gọi trong `dispose`.
+  VoidCallback? _huyLamMoi;
 
   @override
   void dispose() {
+    _huyLamMoi?.call();
     _refreshTimer?.cancel();
     _plateDebounce?.cancel();
     _plateController.dispose();

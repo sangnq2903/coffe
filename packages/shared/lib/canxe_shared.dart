@@ -27,5 +27,6 @@ export 'src/scale/weight_parser.dart';
 export 'src/api/api_client.dart';
 export 'src/api/payroll_api.dart';
 export 'src/api/trade_api.dart';
+export 'src/api/live_change_client.dart';
 export 'src/api/live_scale_client.dart';
 export 'src/api/api_exception.dart';

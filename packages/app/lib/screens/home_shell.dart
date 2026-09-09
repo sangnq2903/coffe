@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../core/theme.dart';
 import '../state/server_connection.dart';
+import '../state/data_refresh_controller.dart';
 import '../state/live_weight_controller.dart';
 import '../widgets/station_picker.dart';
 import 'account_screen.dart';
@@ -55,9 +56,14 @@ class _HomeShellState extends State<HomeShell> {
   /// vậy ngay trong `build` sẽ gây lỗi "setState during build".
   void _syncLiveWeight(ServerConnection conn) {
     final live = context.read<LiveWeightController>();
+    final lamMoi = context.read<DataRefreshController>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       live.connectTo(conn.scaleWsUri(), conn.stationCode);
+      // Kênh tín hiệu thay đổi mở một lần cho cả app, ngay chỗ mở kênh số cân:
+      // cùng một điều kiện (đã đăng nhập, đúng máy chủ) và cùng phải mở lại khi
+      // người dùng đổi địa chỉ máy chủ.
+      lamMoi.connectTo(conn.changeWsUri());
     });
   }
 

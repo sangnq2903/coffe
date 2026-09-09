@@ -77,6 +77,7 @@ void main() {
       trades: TradeService(repo.trades, repo),
       auth: auth,
       duLieu: duLieuThu,
+      changes: ChangeBroker(),
       tuDong: AutoBackupService(database: database, duLieu: duLieuThu, may: 'KHO01'),
     );
     handler = const Pipeline().addMiddleware(authMiddleware(auth)).addHandler(router.handler);

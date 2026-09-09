@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/formatters.dart';
 import '../../core/theme.dart';
+import '../../state/data_refresh_controller.dart';
 import '../../state/server_connection.dart';
 import 'crew_detail_screen.dart';
 
@@ -30,10 +31,17 @@ class _CrewsScreenState extends State<CrewsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    // Máy khác trong kho ghi gì thì máy này tự tải lại, không phải bấm làm mới.
+    _huyLamMoi =
+        context.read<DataRefreshController>().dangKy(const ['doan', 'nhan_vien'], _load);
   }
+
+  /// Huỷ đăng ký nhận tín hiệu; gọi trong `dispose`.
+  VoidCallback? _huyLamMoi;
 
   @override
   void dispose() {
+    _huyLamMoi?.call();
     _searchController.dispose();
     super.dispose();
   }

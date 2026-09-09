@@ -206,6 +206,16 @@ class ServerConnection extends ChangeNotifier {
   ///
   /// Máy chủ bắt đăng nhập cả với WebSocket, nên chưa đăng nhập thì không mở
   /// kênh — mở cũng bị từ chối ngay.
+  /// Địa chỉ WebSocket nhận tín hiệu "dữ liệu vừa đổi".
+  ///
+  /// Không kèm mã trạm: tín hiệu là của cả máy chủ, mọi màn hình đều nghe chung
+  /// một kênh rồi tự lọc theo bảng mình quan tâm.
+  Uri? changeWsUri() {
+    final client = _client;
+    if (client == null || !isSignedIn) return null;
+    return client.wsUri('/ws/thay-doi');
+  }
+
   Uri? scaleWsUri() {
     final client = _client;
     if (client == null || !isSignedIn || stationCode.isEmpty) return null;
