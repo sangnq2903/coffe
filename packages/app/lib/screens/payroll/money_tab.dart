@@ -326,6 +326,8 @@ class _WorkerMoneyScreenState extends State<WorkerMoneyScreen> {
                     children: [
                       _balanceCard(sheet),
                       const SizedBox(height: AppTheme.gapMd),
+                      _advanceAvailableCard(sheet),
+                      const SizedBox(height: AppTheme.gapMd),
                       _actions(sheet),
                       const SizedBox(height: AppTheme.gapMd),
                       _monthsCard(sheet),
@@ -364,6 +366,35 @@ class _WorkerMoneyScreenState extends State<WorkerMoneyScreen> {
                 'Người này đã nhận nhiều hơn công đã làm. Số dư âm là tiền công ty '
                 'đang cho vay — cân nhắc trước khi ứng thêm.',
                 style: TextStyle(fontSize: 12, color: AppTheme.offline),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Tổng có thể ứng **ngay bây giờ**: trần tháng hiện tại cộng dư các tháng
+  /// trước chưa ứng hết — gộp sẵn để người duyệt không phải tự cộng trần
+  /// từng tháng trong mục "Theo tháng" ở dưới.
+  Widget _advanceAvailableCard(MoneySheet sheet) {
+    final conUng = sheet.advanceAvailableNow;
+    final coDu = sheet.advanceCarriedOver > 0;
+    return SectionCard(
+      title: 'Có thể ứng ngay bây giờ',
+      icon: Icons.payments_outlined,
+      accentColor: conUng <= 0 ? AppTheme.offline : AppTheme.primary,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _line('Tổng có thể ứng', conUng,
+              color: conUng <= 0 ? AppTheme.offline : AppTheme.primary, bold: true),
+          if (coDu)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                'Đã gồm ${formatMoney(sheet.advanceCarriedOver)} đ dư từ các tháng '
+                'trước chưa ứng hết.',
+                style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
               ),
             ),
         ],
@@ -846,7 +877,9 @@ class _EntryDialogState extends State<_EntryDialog> {
           Text(
             'Thu nhập đã làm được: ${formatMoney(preview.income)} đ\n'
             'Trần 50%: ${formatMoney(preview.cap)} đ • '
-            'đã ứng ${formatMoney(preview.advancedBefore)} đ\n'
+            'đã ứng ${formatMoney(preview.advancedBefore)} đ'
+            '${preview.carriedOver > 0 ? '\nDư các tháng trước mang qua: '
+                '${formatMoney(preview.carriedOver)} đ' : ''}\n'
             'Còn được ứng: ${formatMoney(preview.allowed)} đ',
             style: const TextStyle(fontSize: 12.5),
           ),

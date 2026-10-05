@@ -936,6 +936,58 @@ void main() {
       expect(t10['advance_cap'], ((8000000 * 10 / 31).round() / 2).round());
     });
 
+    test('dư ứng của tháng trước được cộng vào trần tháng sau', () async {
+      // Tháng 9 chỉ ứng 500k trên trần 2 triệu, còn dư 1,5 triệu — dư này
+      // phải mang qua tháng 10 chứ không bị bỏ như nợ.
+      final nen = await nenCoLuong();
+      await ung(nen['nv']!, 500000);
+      for (var d = 1; d <= 10; d++) {
+        await post('/api/doan/$doanA/cham-cong', {
+          'date': ngay(2026, 10, d),
+          'marks': {nen['nv']!: true},
+        });
+      }
+
+      final tranRiengT10 = ((8000000 * 10 / 31).round() / 2).round();
+      final preview = await post('/api/doan/$doanA/so-tien/kiem-tra', {
+        'worker_id': nen['nv'],
+        'amount': tranRiengT10 + 1500000.0,
+        'date': ngay(2026, 10, 20),
+      });
+
+      expect(preview['carried_over'], 1500000);
+      expect(preview['cap'], tranRiengT10);
+      expect(preview['allowed'], tranRiengT10 + 1500000);
+      expect(preview['exceeds_cap'], false,
+          reason: 'dư tháng 9 đủ che phần vượt trần riêng của tháng 10');
+    });
+
+    test('nợ vượt trần tháng trước không bị trừ lùi vào trần tháng sau',
+        () async {
+      // Tháng 9 ứng vượt trần (có lý do) — khoản vượt không được mang qua
+      // dưới dạng số âm, chỉ đơn giản là không còn dư để cộng.
+      final nen = await nenCoLuong();
+      await ung(nen['nv']!, 3000000, reason: 'Vượt trần có duyệt');
+      for (var d = 1; d <= 10; d++) {
+        await post('/api/doan/$doanA/cham-cong', {
+          'date': ngay(2026, 10, d),
+          'marks': {nen['nv']!: true},
+        });
+      }
+
+      final tranRiengT10 = ((8000000 * 10 / 31).round() / 2).round();
+      final preview = await post('/api/doan/$doanA/so-tien/kiem-tra', {
+        'worker_id': nen['nv'],
+        'amount': tranRiengT10.toDouble(),
+        'date': ngay(2026, 10, 20),
+      });
+
+      expect(preview['carried_over'], 0);
+      expect(preview['allowed'], tranRiengT10);
+      expect(preview['exceeds_cap'], false,
+          reason: 'ứng đúng trần riêng của tháng 10, không bị siết lại vì nợ tháng 9');
+    });
+
     test('sửa khoản ứng không bị đếm tiền cũ hai lần', () async {
       final nen = await nenCoLuong();
       final ghi = await ung(nen['nv']!, 1500000);

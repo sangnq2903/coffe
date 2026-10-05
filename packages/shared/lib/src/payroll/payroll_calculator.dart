@@ -56,17 +56,26 @@ class AdvanceCheck {
     required this.cap,
     required this.advancedBefore,
     required this.income,
+    this.carriedOver = 0,
   });
 
   /// Số tiền muốn ứng.
   final double requested;
 
-  /// Còn được ứng bao nhiêu trước khi vượt trần.
+  /// Còn được ứng bao nhiêu trước khi vượt trần — đã gồm cả phần dư mang từ
+  /// các tháng trước qua ([carriedOver]).
   final double allowed;
 
   final double cap;
   final double advancedBefore;
   final double income;
+
+  /// Phần chưa ứng hết của các tháng trước, được cộng vào trần tháng này.
+  ///
+  /// Mỗi tháng trước tính riêng và chặn ở 0 trước khi cộng — tháng nào ứng
+  /// *vượt* trần (có lý do) chỉ đóng góp 0, không kéo trần các tháng sau
+  /// xuống âm. Chỉ có **dư** mới mang qua được, nợ thì không.
+  final double carriedOver;
 
   bool get exceedsCap => requested > allowed;
 
@@ -78,12 +87,14 @@ class AdvanceCheck {
   String? get warning {
     if (!exceedsCap) return null;
     if (allowed <= 0) {
-      return 'Người này đã ứng hết mức cho phép của tháng '
-          '(${PayrollCalculator.money(cap)}). Ứng thêm là vượt luật.';
+      return 'Người này đã ứng hết mức cho phép, kể cả phần dư các tháng '
+          'trước (tổng ${PayrollCalculator.money(cap + carriedOver)}). '
+          'Ứng thêm là vượt luật.';
     }
     return 'Vượt trần ${PayrollCalculator.money(excess)}. '
-        'Tháng này chỉ còn được ứng ${PayrollCalculator.money(allowed)} '
-        'trên tổng trần ${PayrollCalculator.money(cap)}.';
+        'Tổng còn được ứng (trần tháng này ${PayrollCalculator.money(cap)}'
+        '${carriedOver > 0 ? ' + dư tháng trước ${PayrollCalculator.money(carriedOver)}' : ''}) '
+        'chỉ còn ${PayrollCalculator.money(allowed)}.';
   }
 }
 
@@ -187,19 +198,50 @@ abstract final class PayrollCalculator {
 
   /// Kiểm tra một lần ứng lương so với trần của tháng.
   ///
-  /// Trần chỉ nhìn thu nhập **của chính tháng đó**. Nợ dồn từ tháng trước không
-  /// làm trần cao lên — đây là quy tắc cốt lõi của cả module.
+  /// Trần nhìn thu nhập **của chính tháng đó**, cộng thêm [carriedOver] — phần
+  /// chưa ứng hết của các tháng trước. Nợ dồn (ứng vượt trần) không làm trần
+  /// cao lên; nhưng **dư** (chưa ứng hết) thì được mang qua, vì đó là tiền
+  /// người ta đã làm ra thật, chỉ chưa lấy mà thôi.
   static AdvanceCheck checkAdvance({
     required MonthlyPayroll month,
     required double requested,
+    double carriedOver = 0,
   }) =>
       AdvanceCheck(
         requested: requested,
-        allowed: month.remainingAdvance,
+        allowed: roundMoney(month.remainingAdvance + carriedOver),
         cap: month.advanceCap,
         advancedBefore: month.advanced,
         income: month.income,
+        carriedOver: carriedOver,
       );
+
+  /// Dư ứng của các tháng **trước** [beforeMonthKey], cộng lại để mang qua.
+  ///
+  /// Mỗi tháng tính riêng rồi chặn ở 0 ([MonthlyPayroll.remainingAdvance])
+  /// trước khi cộng — tháng nào ứng vượt trần (có lý do) chỉ đóng góp 0, không
+  /// kéo tổng xuống âm và làm hẹp trần những tháng sau.
+  static double carriedOverAdvance({
+    required String beforeMonthKey,
+    required Iterable<Attendance> attendances,
+    required Iterable<PayrollEntry> entries,
+  }) {
+    final thangTruoc = <String>{
+      ...attendances
+          .where((a) => !a.deleted && a.monthKey.compareTo(beforeMonthKey) < 0)
+          .map((a) => a.monthKey),
+      ...entries
+          .where((e) => !e.deleted && e.monthKey.compareTo(beforeMonthKey) < 0)
+          .map((e) => e.monthKey),
+    };
+
+    var tong = 0.0;
+    for (final key in thangTruoc) {
+      tong += monthly(monthKey: key, attendances: attendances, entries: entries)
+          .remainingAdvance;
+    }
+    return roundMoney(tong);
+  }
 
   /// Công nợ luỹ kế cả mùa.
   static WorkerBalance balance({

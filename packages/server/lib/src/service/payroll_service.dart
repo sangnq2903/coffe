@@ -671,6 +671,22 @@ class PayrollService {
       entries: entries,
     );
 
+    // Tổng có thể ứng **ngay bây giờ**: trần tháng hiện tại cộng dư các tháng
+    // trước chưa ứng hết. Dựng sẵn ở đây để màn hình nhập khoản không phải tự
+    // tính lại — tính hai nơi là sớm muộn lệch nhau.
+    final nay = DateTime.now();
+    final thangNayKey = '${nay.year}-${nay.month.toString().padLeft(2, '0')}';
+    final thangNay = PayrollCalculator.monthly(
+      monthKey: thangNayKey,
+      attendances: attendances,
+      entries: entries,
+    );
+    final duThangTruoc = PayrollCalculator.carriedOverAdvance(
+      beforeMonthKey: thangNayKey,
+      attendances: attendances,
+      entries: entries,
+    );
+
     return {
       'worker': worker.toJson(),
       'months': [
@@ -683,6 +699,10 @@ class PayrollService {
       ],
       'balance': _balanceJson(balance),
       'entries': entries.map((e) => e.toJson()).toList(),
+      'advance_carried_over': duThangTruoc,
+      'advance_available_now': PayrollCalculator.roundMoney(
+        thangNay.remainingAdvance + duThangTruoc,
+      ),
     };
   }
 
@@ -769,6 +789,7 @@ class PayrollService {
       'cap': check.cap,
       'advanced_before': check.advancedBefore,
       'income': check.income,
+      'carried_over': check.carriedOver,
       'exceeds_cap': check.exceedsCap,
       'excess': check.excess,
       'warning': check.warning,
@@ -785,6 +806,7 @@ class PayrollService {
     String? ignoreEntryId,
   }) {
     final monthKey = '${date.year}-${date.month.toString().padLeft(2, '0')}';
+    final attendances = _repo.attendances(crewId: crewId, workerId: workerId);
     final entries = _repo
         .entries(crewId: crewId, workerId: workerId)
         .where((e) => e.id != ignoreEntryId);
@@ -792,7 +814,12 @@ class PayrollService {
     return PayrollCalculator.checkAdvance(
       month: PayrollCalculator.monthly(
         monthKey: monthKey,
-        attendances: _repo.attendances(crewId: crewId, workerId: workerId),
+        attendances: attendances,
+        entries: entries,
+      ),
+      carriedOver: PayrollCalculator.carriedOverAdvance(
+        beforeMonthKey: monthKey,
+        attendances: attendances,
         entries: entries,
       ),
       requested: amount,

@@ -364,6 +364,8 @@ class MoneySheet {
     this.months = const [],
     this.balance = const WorkerBalance(totalEarned: 0, totalAdvanced: 0, totalPaid: 0),
     this.entries = const [],
+    this.advanceCarriedOver = 0,
+    this.advanceAvailableNow = 0,
   });
 
   factory MoneySheet.fromJson(Map<String, Object?> json) => MoneySheet(
@@ -373,6 +375,8 @@ class MoneySheet {
         months: asMapList(json['months']).map(monthlyPayrollFromJson).toList(),
         balance: workerBalanceFromJson(json['balance']),
         entries: asMapList(json['entries']).map(PayrollEntry.fromJson).toList(),
+        advanceCarriedOver: asDouble(json['advance_carried_over']),
+        advanceAvailableNow: asDouble(json['advance_available_now']),
       );
 
   final Worker? worker;
@@ -384,6 +388,12 @@ class MoneySheet {
 
   /// Mọi khoản tiền của người này, mới nhất trước.
   final List<PayrollEntry> entries;
+
+  /// Dư ứng của các tháng trước tháng hiện tại, chưa ứng hết.
+  final double advanceCarriedOver;
+
+  /// Tổng có thể ứng ngay bây giờ: trần tháng hiện tại + [advanceCarriedOver].
+  final double advanceAvailableNow;
 
   /// Tháng gần nhất, dùng khi cần một mốc để ứng lương.
   MonthlyPayroll? get latestMonth => months.isEmpty ? null : months.last;
@@ -459,6 +469,7 @@ class AdvancePreview {
     this.cap = 0,
     this.advancedBefore = 0,
     this.income = 0,
+    this.carriedOver = 0,
     this.exceedsCap = false,
     this.excess = 0,
     this.warning,
@@ -471,6 +482,7 @@ class AdvancePreview {
         cap: asDouble(json['cap']),
         advancedBefore: asDouble(json['advanced_before']),
         income: asDouble(json['income']),
+        carriedOver: asDouble(json['carried_over']),
         exceedsCap: asBool(json['exceeds_cap']),
         excess: asDouble(json['excess']),
         warning: asStringOrNull(json['warning']),
@@ -479,12 +491,15 @@ class AdvancePreview {
 
   final double requested;
 
-  /// Còn được ứng bao nhiêu trước khi vượt trần.
+  /// Còn được ứng bao nhiêu trước khi vượt trần — đã gồm [carriedOver].
   final double allowed;
 
   final double cap;
   final double advancedBefore;
   final double income;
+
+  /// Phần chưa ứng hết của các tháng trước, được cộng vào trần tháng này.
+  final double carriedOver;
   final bool exceedsCap;
   final double excess;
 
