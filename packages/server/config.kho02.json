@@ -1,0 +1,50 @@
+{
+  "_huong_dan": "Cấu hình MÁY TRẠM CÂN KHO02. Đầu cân Keli, cổng COM2, 9600 baud.",
+
+  "role": "station",
+  "http": {
+    "host": "0.0.0.0",
+    "port": 9081
+  },
+
+  "station": {
+    "code": "KHO02",
+    "name": "Trạm cân kho 02",
+    "warehouse_name": "Kho số 2",
+    "address": "",
+    "_public_base_url": "Địa chỉ Tailscale của CHÍNH máy này — điện thoại và máy khác dùng địa chỉ này để lấy số cân realtime.",
+    "public_base_url": "http://100.104.143.12:9081"
+  },
+
+  "central": {
+    "_url": "Cổng nhận đồng bộ của central là 9080 (KHÔNG phải 9081 — 9081 trên máy central là một trạm KHO01 khác đang chạy riêng trên đó).",
+    "url": "http://100.76.81.118:9080",
+    "_tai_khoan": "Tài khoản trạm cân để đăng nhập lên trung tâm. Tạo trong app: Cá nhân > Quản lý tài khoản > Thêm, chọn quyền 'Nhân viên trạm cân' và tích đúng kho KHO02. Chưa khai thì trạm vẫn cân và lưu cục bộ bình thường.",
+    "username": "admin2",
+    "password": "admin2",
+    "sync_interval_seconds": 20
+  },
+
+  "database": {
+    "path": "data/canxe-kho02.db"
+  },
+
+  "web_root": "web",
+
+  "scale": {
+    "_do_duoc": "Dò bằng dart run bin/do_cong.dart COM2 — đọc được 100% ở 9600 baud, giao thức keli.",
+    "port": "COM2",
+    "baud_rate": 9600,
+    "data_bits": 8,
+    "stop_bits": 1,
+    "parity": "none",
+    "protocol": "keli",
+    "divisor": 1,
+    "unit": "kg",
+    "stable_tolerance": 5,
+    "stable_samples": 5,
+    "simulate": false,
+    "data_timeout_seconds": 5,
+    "broadcast_interval_ms": 200
+  }
+}
