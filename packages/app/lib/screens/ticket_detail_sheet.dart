@@ -57,7 +57,8 @@ class _TicketDetailViewState extends State<TicketDetailView> {
 
   /// Tên máy in mặc định của máy chủ đang phục vụ phiếu này — hiện cạnh nút
   /// in để người dùng biết trước sẽ in ra máy nào, đỡ bấm xong mới biết lỗi.
-  String? _tenMayIn;
+  List<String> _mayIn = const [];
+  String? _mayInChon;
   bool _dangDoMayIn = true;
 
   WeighTicket get _ticket => _hienTai;
@@ -67,9 +68,13 @@ class _TicketDetailViewState extends State<TicketDetailView> {
   @override
   void initState() {
     super.initState();
-    _client?.defaultPrinterName().then((ten) {
-      if (mounted) setState(() => _tenMayIn = ten);
-    }).whenComplete(() {
+    _client?.danhSachMayIn().then((ds) {
+      if (!mounted) return;
+      setState(() {
+        _mayIn = ds.may;
+        _mayInChon = ds.macDinh ?? (ds.may.isNotEmpty ? ds.may.first : null);
+      });
+    }).catchError((_) {}).whenComplete(() {
       if (mounted) setState(() => _dangDoMayIn = false);
     });
   }
@@ -342,7 +347,7 @@ class _TicketDetailViewState extends State<TicketDetailView> {
                   flex: 2,
                   child: FilledButton.icon(
                     onPressed:
-                        _busy || !done ? null : () => _run(() => TicketPrinter.print(_ticket)),
+                        _busy || !done ? null : () => _run(_inPhieu),
                     icon: _busy
                         ? const SizedBox(
                             width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
@@ -384,22 +389,55 @@ class _TicketDetailViewState extends State<TicketDetailView> {
         ],
       );
     }
-    final ten = _tenMayIn;
-    final ketNoi = ten != null;
+    if (_mayIn.isEmpty) {
+      return const Row(
+        children: [
+          Icon(Icons.print_disabled, size: 14, color: AppTheme.offline),
+          SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Máy chủ này không có máy in — bấm IN sẽ tải PDF về',
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            ),
+          ),
+        ],
+      );
+    }
     return Row(
       children: [
-        Icon(ketNoi ? Icons.print : Icons.print_disabled,
-            size: 14, color: ketNoi ? AppTheme.stable : AppTheme.offline),
+        const Icon(Icons.print, size: 14, color: AppTheme.stable),
         const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            ketNoi ? 'Máy in: $ten' : 'Không dò được máy in trên máy chủ này',
-            style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
-            overflow: TextOverflow.ellipsis,
+        const Text('Máy in:', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: DropdownButton<String>(
+            value: _mayInChon,
+            isExpanded: true,
+            isDense: true,
+            items: [
+              for (final ten in _mayIn)
+                DropdownMenuItem(
+                  value: ten,
+                  child: Text(ten, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: (ten) => setState(() => _mayInChon = ten),
           ),
         ),
       ],
     );
+  }
+
+  /// In thẳng ra máy đã chọn qua máy chủ. Khi không có máy in nào trên máy chủ
+  /// (central) thì tải PDF về để người dùng tự in.
+  Future<void> _inPhieu() async {
+    final may = _mayInChon;
+    if (may == null) {
+      await TicketPrinter.print(_ticket);
+      return;
+    }
+    final bytes = await TicketPrinter.build(_ticket);
+    await _client!.inPdfTrenMay(bytes, may);
   }
 
   Widget _totals() => Container(

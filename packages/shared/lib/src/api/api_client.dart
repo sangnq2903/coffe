@@ -302,11 +302,26 @@ class ApiClient {
     return (data['ports'] as List? ?? const []).map((e) => e.toString()).toList();
   }
 
-  /// Tên máy in mặc định của máy chủ đang phục vụ trang này — `null` nếu
-  /// không dò được (không phải Windows, hoặc chưa cài máy in nào).
-  Future<String?> defaultPrinterName() async {
-    final data = await _getMap('/api/printer/mac-dinh');
-    return data['name'] as String?;
+  /// Các máy in cài trên máy chủ đang phục vụ trang này, kèm máy mặc định.
+  /// Danh sách rỗng khi máy chủ không phải Windows (ví dụ máy central).
+  Future<({List<String> may, String? macDinh})> danhSachMayIn() async {
+    final data = await _getMap('/api/printer/danh-sach');
+    final may = (data['printers'] as List? ?? const [])
+        .map((e) => (e as Map)['name'].toString())
+        .toList();
+    return (may: may, macDinh: data['default'] as String?);
+  }
+
+  /// Gửi file PDF tới máy chủ để in thẳng ra máy in đã chọn.
+  Future<void> inPdfTrenMay(Uint8List bytes, String tenMayIn) async {
+    final uri = _uri('/api/printer/in', {'printer': tenMayIn});
+    await _send(
+      () => _http.post(uri, headers: {
+        'content-type': 'application/octet-stream',
+        if (hasToken) 'authorization': 'Bearer $authToken',
+      }, body: bytes),
+      uri,
+    );
   }
 
   /// Số cân hiện tại — dùng để hiển thị ngay khi mới mở màn hình, trong lúc

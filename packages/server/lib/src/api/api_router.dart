@@ -198,9 +198,29 @@ class ApiRouter {
     });
 
     // ------------------------------------------------------------- máy in
-    router.get('/api/printer/mac-dinh', (Request request) async {
-      final name = await defaultPrinterName();
-      return _json({'name': name, 'available': name != null});
+    router.get('/api/printer/danh-sach', (Request request) async {
+      final printers = await listPrinters();
+      final macDinh = printers.where((printer) => printer.isDefault).firstOrNull?.name;
+      return _json({
+        'printers': printers.map((printer) => printer.toJson()).toList(),
+        'default': macDinh,
+      });
+    });
+
+    router.post('/api/printer/in', (Request request) async {
+      final chan = _chanKhongPhaiChu(request);
+      if (chan != null) return chan;
+      final printer = request.url.queryParameters['printer'] ?? '';
+      final bytes = await _bytes(request);
+      if (printer.isEmpty) return _error('Thiếu tên máy in.', 400);
+      try {
+        await printPdfTo(bytes, printer);
+        return _json({'ok': true});
+      } on ArgumentError catch (e) {
+        return _error('${e.message}', 400);
+      } on StateError catch (e) {
+        return _error('${e.message}', 500);
+      }
     });
 
     // ------------------------------------------------------------ đầu cân
