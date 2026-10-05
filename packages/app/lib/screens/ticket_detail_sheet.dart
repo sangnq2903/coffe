@@ -55,9 +55,24 @@ class _TicketDetailViewState extends State<TicketDetailView> {
   /// Đã đụng vào phiếu hay chưa — bên gọi dựa vào đây để tải lại danh sách.
   bool _daDoi = false;
 
+  /// Tên máy in mặc định của máy chủ đang phục vụ phiếu này — hiện cạnh nút
+  /// in để người dùng biết trước sẽ in ra máy nào, đỡ bấm xong mới biết lỗi.
+  String? _tenMayIn;
+  bool _dangDoMayIn = true;
+
   WeighTicket get _ticket => _hienTai;
 
   ApiClient? get _client => context.read<ServerConnection>().client;
+
+  @override
+  void initState() {
+    super.initState();
+    _client?.defaultPrinterName().then((ten) {
+      if (mounted) setState(() => _tenMayIn = ten);
+    }).whenComplete(() {
+      if (mounted) setState(() => _dangDoMayIn = false);
+    });
+  }
 
   Future<void> _run(Future<void> Function() action) async {
     setState(() {
@@ -315,35 +330,77 @@ class _TicketDetailViewState extends State<TicketDetailView> {
           color: AppTheme.surface,
           border: Border(top: BorderSide(color: AppTheme.line)),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              flex: 2,
-              child: FilledButton.icon(
-                onPressed: _busy || !done ? null : () => _run(() => TicketPrinter.print(_ticket)),
-                icon: _busy
-                    ? const SizedBox(
-                        width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.print),
-                label: const Text('IN PHIẾU CÂN'),
-              ),
-            ),
-            const SizedBox(width: AppTheme.gapSm),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _busy || !done ? null : () => _run(() => TicketPrinter.share(_ticket)),
-                icon: Icon(kIsWeb ? Icons.download : Icons.ios_share, size: 19),
-                label: Text(kIsWeb ? 'Tải PDF' : 'Chia sẻ'),
-              ),
-            ),
-            const SizedBox(width: AppTheme.gapSm),
-            OutlinedButton(
-              onPressed: () => Navigator.pop(context, _daDoi),
-              child: const Text('Đóng'),
+            _dongMayIn(),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed:
+                        _busy || !done ? null : () => _run(() => TicketPrinter.print(_ticket)),
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.print),
+                    label: const Text('IN PHIẾU CÂN'),
+                  ),
+                ),
+                const SizedBox(width: AppTheme.gapSm),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        _busy || !done ? null : () => _run(() => TicketPrinter.share(_ticket)),
+                    icon: Icon(kIsWeb ? Icons.download : Icons.ios_share, size: 19),
+                    label: Text(kIsWeb ? 'Tải PDF' : 'Chia sẻ'),
+                  ),
+                ),
+                const SizedBox(width: AppTheme.gapSm),
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context, _daDoi),
+                  child: const Text('Đóng'),
+                ),
+              ],
             ),
           ],
         ),
       );
+
+  /// Dòng nhỏ báo máy in mặc định của máy chủ đang phục vụ trang này — đây là
+  /// máy in sẽ nhận bản in khi bấm "IN PHIẾU CÂN", không phải chọn lúc đó mới
+  /// biết. Dò bằng cách gọi `/api/printer/mac-dinh` (chỉ có trên Windows).
+  Widget _dongMayIn() {
+    if (_dangDoMayIn) {
+      return const Row(
+        children: [
+          SizedBox(
+              width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6)),
+          SizedBox(width: 6),
+          Text('Đang dò máy in...', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+        ],
+      );
+    }
+    final ten = _tenMayIn;
+    final ketNoi = ten != null;
+    return Row(
+      children: [
+        Icon(ketNoi ? Icons.print : Icons.print_disabled,
+            size: 14, color: ketNoi ? AppTheme.stable : AppTheme.offline),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            ketNoi ? 'Máy in: $ten' : 'Không dò được máy in trên máy chủ này',
+            style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _totals() => Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),

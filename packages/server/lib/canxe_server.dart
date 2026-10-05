@@ -15,6 +15,7 @@ export 'src/db/payroll_repository.dart';
 export 'src/db/repository.dart';
 export 'src/db/trade_repository.dart';
 export 'src/logging.dart';
+export 'src/printer/printer_lookup.dart';
 export 'src/scale/scale_service.dart';
 export 'src/scale/win32_serial.dart' show listSerialPorts, SerialPortException, Win32SerialPort;
 export 'src/server_app.dart';

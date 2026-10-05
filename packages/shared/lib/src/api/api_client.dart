@@ -302,6 +302,13 @@ class ApiClient {
     return (data['ports'] as List? ?? const []).map((e) => e.toString()).toList();
   }
 
+  /// Tên máy in mặc định của máy chủ đang phục vụ trang này — `null` nếu
+  /// không dò được (không phải Windows, hoặc chưa cài máy in nào).
+  Future<String?> defaultPrinterName() async {
+    final data = await _getMap('/api/printer/mac-dinh');
+    return data['name'] as String?;
+  }
+
   /// Số cân hiện tại — dùng để hiển thị ngay khi mới mở màn hình, trong lúc
   /// WebSocket chưa kịp bắt tay.
   Future<ScaleReading> currentReading() async =>

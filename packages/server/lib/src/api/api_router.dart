@@ -13,6 +13,7 @@ import '../backup/auto_backup.dart';
 import '../backup/data_transfer.dart';
 import '../config.dart';
 import '../db/repository.dart';
+import '../printer/printer_lookup.dart';
 import '../scale/scale_service.dart';
 import '../scale/win32_serial.dart';
 import '../service/payroll_service.dart';
@@ -194,6 +195,12 @@ class ApiRouter {
       }
       await worker.syncOnce();
       return _json(_syncStatus().toJson());
+    });
+
+    // ------------------------------------------------------------- máy in
+    router.get('/api/printer/mac-dinh', (Request request) async {
+      final name = await defaultPrinterName();
+      return _json({'name': name, 'available': name != null});
     });
 
     // ------------------------------------------------------------ đầu cân
