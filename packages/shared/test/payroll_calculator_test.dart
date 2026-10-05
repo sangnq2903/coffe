@@ -290,10 +290,12 @@ void main() {
       expect(duMangQua, 3000000);
 
       final thang10 = PayrollCalculator.monthly(
-          monthKey: '2026-10', attendances: tatCaCong, entries: tatCaKhoan);
+          monthKey: '2026-10',
+          attendances: tatCaCong,
+          entries: tatCaKhoan,
+          carriedOverAdvance: duMangQua);
       final check = PayrollCalculator.checkAdvance(
         month: thang10,
-        carriedOver: duMangQua,
         requested: thang10.advanceCap + 2000000,
       );
 
@@ -320,10 +322,12 @@ void main() {
       expect(duMangQua, 0, reason: 'tháng 9 đã vượt trần, không còn dư, nhưng không ra số âm');
 
       final thang10 = PayrollCalculator.monthly(
-          monthKey: '2026-10', attendances: tatCaCong, entries: tatCaKhoan);
+          monthKey: '2026-10',
+          attendances: tatCaCong,
+          entries: tatCaKhoan,
+          carriedOverAdvance: duMangQua);
       final check = PayrollCalculator.checkAdvance(
         month: thang10,
-        carriedOver: duMangQua,
         requested: thang10.advanceCap,
       );
       expect(check.allowed, thang10.advanceCap,
@@ -341,6 +345,68 @@ void main() {
         entries: [ungT9],
       );
       expect(duMangQua, 7000000);
+    });
+
+    test('mượn dư tháng trước để ứng vượt trần riêng tháng này thì dư đó bị dùng hết', () {
+      // Đúng ca thực tế: tháng 9 trần 1 triệu, ứng 567k, còn dư 433k. Tháng 10
+      // trần riêng chỉ 267k, nhưng ứng hẳn 700k = 267k (trần riêng) + 433k (dư
+      // tháng 9) — mượn đúng hết phần dư. Lần kiểm sau đó, dư tháng 9 phải về 0,
+      // không được hiện lại 433k như chưa hề đụng tới.
+      final congT9 = chamCong(year: 2026, month: 9, days: 30, monthlyAmount: 2000000);
+      final ungT9 = khoan(PayrollEntryType.ungLuong, 567000, month: 9, day: 20);
+
+      final congT10 = chamCong(year: 2026, month: 10, days: 31, monthlyAmount: 534000);
+      final ungT10 = khoan(PayrollEntryType.ungLuong, 700000, month: 10, day: 15);
+
+      final tatCaCong = [...congT9, ...congT10];
+      final tatCaKhoan = [ungT9, ungT10];
+
+      final duTruocT10 = PayrollCalculator.carriedOverAdvance(
+        beforeMonthKey: '2026-10',
+        attendances: tatCaCong,
+        entries: tatCaKhoan,
+      );
+      expect(duTruocT10, 433000, reason: 'dư tháng 9 trước khi tính tháng 10 vẫn đúng 433k');
+
+      final thang10 = PayrollCalculator.monthly(
+          monthKey: '2026-10',
+          attendances: tatCaCong,
+          entries: tatCaKhoan,
+          carriedOverAdvance: duTruocT10);
+      expect(thang10.advanceCap, 267000);
+      expect(thang10.advanced, 700000);
+
+      final check = PayrollCalculator.checkAdvance(
+        month: thang10,
+        requested: 0,
+      );
+      expect(check.allowed, 0,
+          reason: '267k trần riêng + 433k dư đã dùng hết đúng 700k, không còn gì nữa');
+    });
+
+    test('monthlySeries tự mang dư qua từng tháng, không cần tính riêng ở nơi gọi', () {
+      final congT9 = chamCong(year: 2026, month: 9, days: 30, monthlyAmount: 2000000);
+      final ungT9 = khoan(PayrollEntryType.ungLuong, 567000, month: 9, day: 20);
+
+      final congT10 = chamCong(year: 2026, month: 10, days: 31, monthlyAmount: 534000);
+      final ungT10 = khoan(PayrollEntryType.ungLuong, 700000, month: 10, day: 15);
+
+      final series = PayrollCalculator.monthlySeries(
+        attendances: [...congT9, ...congT10],
+        entries: [ungT9, ungT10],
+      );
+
+      expect(series.map((m) => m.monthKey), ['2026-09', '2026-10']);
+
+      final thang9 = series[0];
+      expect(thang9.carriedOverAdvance, 0, reason: 'tháng đầu tiên không có gì mang vào');
+      expect(thang9.remainingAdvance, 433000);
+
+      final thang10 = series[1];
+      expect(thang10.carriedOverAdvance, 433000, reason: 'nhận đúng dư của tháng 9');
+      expect(thang10.remainingAdvance, 0, reason: '267k trần riêng + 433k dư đã dùng hết 700k');
+      expect(thang10.overCap, isFalse,
+          reason: 'không thật sự vượt vì có dư mượn, dù 700k > 267k trần riêng');
     });
   });
 

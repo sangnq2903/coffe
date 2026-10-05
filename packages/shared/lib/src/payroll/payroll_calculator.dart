@@ -12,6 +12,7 @@ class MonthlyPayroll {
     required this.allowance,
     required this.deduction,
     required this.advanced,
+    this.carriedOverAdvance = 0,
   });
 
   final String monthKey;
@@ -32,20 +33,26 @@ class MonthlyPayroll {
   /// Đã ứng trong chính tháng này.
   final double advanced;
 
+  /// Dư ứng từ các tháng **trước** mang qua, đã trừ phần tháng trước đó lỡ
+  /// dùng rồi — xem [PayrollCalculator.carriedOverAdvance]. Mặc định 0 khi
+  /// tính một tháng đơn lẻ không quan tâm tới quá khứ.
+  final double carriedOverAdvance;
+
   /// Thu nhập của tháng — cơ sở tính trần ứng.
   double get income => wageEarned + overtime + allowance - deduction;
 
-  /// Trần ứng: một nửa thu nhập **đã làm được tới thời điểm này**.
+  /// Trần ứng riêng của tháng này: một nửa thu nhập **đã làm được tới thời
+  /// điểm này**. Chưa cộng [carriedOverAdvance] — xem [remainingAdvance].
   double get advanceCap => PayrollCalculator.roundMoney(income / 2);
 
-  /// Còn được ứng bao nhiêu. Không bao giờ âm.
+  /// Còn được ứng bao nhiêu, đã gồm cả [carriedOverAdvance]. Không bao giờ âm.
   double get remainingAdvance {
-    final left = advanceCap - advanced;
+    final left = carriedOverAdvance + advanceCap - advanced;
     return left <= 0 ? 0 : PayrollCalculator.roundMoney(left);
   }
 
-  /// Đã ứng vượt quá nửa thu nhập của tháng.
-  bool get overCap => advanced > advanceCap;
+  /// Đã ứng vượt quá cả trần riêng của tháng lẫn dư mang qua.
+  bool get overCap => advanced > carriedOverAdvance + advanceCap;
 }
 
 /// Kết quả kiểm tra một lần ứng lương.
@@ -172,10 +179,16 @@ abstract final class PayrollCalculator {
   ///
   /// [attendances] và [entries] có thể chứa dữ liệu của nhiều tháng — hàm tự
   /// lọc theo [monthKey], để bên gọi không phải nhớ lọc trước.
+  ///
+  /// [carriedOverAdvance] là dư mang vào tháng này từ các tháng trước — xem
+  /// [PayrollCalculator.carriedOverAdvance]. Bên gọi phải tự tính rồi đưa vào
+  /// đây; hàm này không tự lùi lại xem các tháng trước, vì [attendances] và
+  /// [entries] đưa vào chưa chắc đã đủ dữ liệu của mọi tháng trước đó.
   static MonthlyPayroll monthly({
     required String monthKey,
     required Iterable<Attendance> attendances,
     required Iterable<PayrollEntry> entries,
+    double carriedOverAdvance = 0,
   }) {
     final ofMonth = attendances.where((a) => !a.deleted && a.monthKey == monthKey);
     final money = entries.where((e) => !e.deleted && e.monthKey == monthKey);
@@ -193,54 +206,77 @@ abstract final class PayrollCalculator {
       allowance: sum(PayrollEntryType.phuCap),
       deduction: sum(PayrollEntryType.truTien),
       advanced: sum(PayrollEntryType.ungLuong),
+      carriedOverAdvance: carriedOverAdvance,
     );
+  }
+
+  /// Tính một **dãy** tháng theo đúng thứ tự thời gian, mỗi tháng tự mang
+  /// theo dư ứng từ các tháng trước ([MonthlyPayroll.carriedOverAdvance]).
+  ///
+  /// Gọi hàm này một lần cho cả người rồi dùng thẳng kết quả ở mọi nơi cần
+  /// hiển thị — tính [carriedOverAdvance] riêng ở từng nơi gọi là đúng kiểu đã
+  /// gây ra lỗi (dư tháng trước không được dùng để đỡ tháng này ở màn hình,
+  /// trong khi màn hình khác lại tính đúng): hai nơi chép một công thức thì
+  /// chỉ sớm hay muộn sẽ lệch nhau.
+  static List<MonthlyPayroll> monthlySeries({
+    required Iterable<Attendance> attendances,
+    required Iterable<PayrollEntry> entries,
+  }) {
+    final thangs = <String>{
+      ...attendances.where((a) => !a.deleted).map((a) => a.monthKey),
+      ...entries.where((e) => !e.deleted).map((e) => e.monthKey),
+    }.toList()
+      ..sort();
+
+    var du = 0.0;
+    final result = <MonthlyPayroll>[];
+    for (final key in thangs) {
+      final m = monthly(
+        monthKey: key,
+        attendances: attendances,
+        entries: entries,
+        carriedOverAdvance: du,
+      );
+      result.add(m);
+      du = m.remainingAdvance;
+    }
+    return result;
   }
 
   /// Kiểm tra một lần ứng lương so với trần của tháng.
   ///
-  /// Trần nhìn thu nhập **của chính tháng đó**, cộng thêm [carriedOver] — phần
-  /// chưa ứng hết của các tháng trước. Nợ dồn (ứng vượt trần) không làm trần
-  /// cao lên; nhưng **dư** (chưa ứng hết) thì được mang qua, vì đó là tiền
-  /// người ta đã làm ra thật, chỉ chưa lấy mà thôi.
+  /// [month] phải đã được tính kèm [MonthlyPayroll.carriedOverAdvance] nếu
+  /// muốn tính luôn phần dư các tháng trước — gọi [monthly] với tham số đó,
+  /// hoặc dùng [monthlySeries], trước khi đưa vào đây.
   static AdvanceCheck checkAdvance({
     required MonthlyPayroll month,
     required double requested,
-    double carriedOver = 0,
   }) =>
       AdvanceCheck(
         requested: requested,
-        allowed: roundMoney(month.remainingAdvance + carriedOver),
+        allowed: month.remainingAdvance,
         cap: month.advanceCap,
         advancedBefore: month.advanced,
         income: month.income,
-        carriedOver: carriedOver,
+        carriedOver: month.carriedOverAdvance,
       );
 
-  /// Dư ứng của các tháng **trước** [beforeMonthKey], cộng lại để mang qua.
+  /// Dư ứng luỹ kế của các tháng **trước** [beforeMonthKey], mang qua tháng này.
   ///
-  /// Mỗi tháng tính riêng rồi chặn ở 0 ([MonthlyPayroll.remainingAdvance])
-  /// trước khi cộng — tháng nào ứng vượt trần (có lý do) chỉ đóng góp 0, không
-  /// kéo tổng xuống âm và làm hẹp trần những tháng sau.
+  /// Đi từng tháng theo đúng thứ tự thời gian, cộng trần rồi trừ đã ứng, chặn
+  /// về 0 ở **cuối mỗi tháng** trước khi sang tháng kế — không phải tính riêng
+  /// từng tháng rồi cộng lại. Nhờ vậy tháng nào ứng vượt trần riêng của nó bằng
+  /// cách mượn dư các tháng trước thì đúng phần dư ấy bị trừ đi (không còn hiện
+  /// lại ở lần tính sau), còn tháng nào ứng vượt hẳn (không đủ dư để mượn) thì
+  /// chặn về 0 chứ không kéo âm sang tháng kế — nợ dừng ở đó, không dồn tiếp.
   static double carriedOverAdvance({
     required String beforeMonthKey,
     required Iterable<Attendance> attendances,
     required Iterable<PayrollEntry> entries,
   }) {
-    final thangTruoc = <String>{
-      ...attendances
-          .where((a) => !a.deleted && a.monthKey.compareTo(beforeMonthKey) < 0)
-          .map((a) => a.monthKey),
-      ...entries
-          .where((e) => !e.deleted && e.monthKey.compareTo(beforeMonthKey) < 0)
-          .map((e) => e.monthKey),
-    };
-
-    var tong = 0.0;
-    for (final key in thangTruoc) {
-      tong += monthly(monthKey: key, attendances: attendances, entries: entries)
-          .remainingAdvance;
-    }
-    return roundMoney(tong);
+    final series = monthlySeries(attendances: attendances, entries: entries);
+    final thangTruoc = series.where((m) => m.monthKey.compareTo(beforeMonthKey) < 0);
+    return thangTruoc.isEmpty ? 0 : thangTruoc.last.remainingAdvance;
   }
 
   /// Công nợ luỹ kế cả mùa.

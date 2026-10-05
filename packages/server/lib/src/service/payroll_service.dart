@@ -658,13 +658,13 @@ class PayrollService {
     final attendances = _repo.attendances(crewId: crewId, workerId: workerId);
     final entries = _repo.entries(crewId: crewId, workerId: workerId);
 
-    // Tháng nào có chấm công hoặc có khoản tiền thì hiện, kể cả tháng chỉ ứng
-    // mà chưa chấm ngày nào — nếu không thì khoản đó biến mất khỏi màn hình.
-    final months = <String>{
-      ...attendances.where((a) => !a.deleted).map((a) => a.monthKey),
-      ...entries.map((e) => e.monthKey),
-    }.toList()
-      ..sort();
+    // Mỗi tháng tự mang theo dư ứng từ các tháng trước — tính một lần ở đây,
+    // dùng lại cho cả bảng "theo tháng" lẫn số "có thể ứng ngay bây giờ", để
+    // hai chỗ không bao giờ lệch nhau.
+    final series = PayrollCalculator.monthlySeries(
+      attendances: attendances,
+      entries: entries,
+    );
 
     final balance = PayrollCalculator.balance(
       attendances: attendances,
@@ -672,37 +672,30 @@ class PayrollService {
     );
 
     // Tổng có thể ứng **ngay bây giờ**: trần tháng hiện tại cộng dư các tháng
-    // trước chưa ứng hết. Dựng sẵn ở đây để màn hình nhập khoản không phải tự
-    // tính lại — tính hai nơi là sớm muộn lệch nhau.
+    // trước chưa ứng hết. Tháng hiện tại có thể chưa có dòng nào trong [series]
+    // (chưa chấm công, chưa ứng gì) nên không lấy thẳng từ đó mà tính riêng,
+    // mang theo dư của tháng cuối cùng đã có dữ liệu trước nó.
     final nay = DateTime.now();
     final thangNayKey = '${nay.year}-${nay.month.toString().padLeft(2, '0')}';
-    final thangNay = PayrollCalculator.monthly(
-      monthKey: thangNayKey,
-      attendances: attendances,
-      entries: entries,
-    );
-    final duThangTruoc = PayrollCalculator.carriedOverAdvance(
+    final duTruocThangNay = PayrollCalculator.carriedOverAdvance(
       beforeMonthKey: thangNayKey,
       attendances: attendances,
       entries: entries,
     );
+    final thangNay = PayrollCalculator.monthly(
+      monthKey: thangNayKey,
+      attendances: attendances,
+      entries: entries,
+      carriedOverAdvance: duTruocThangNay,
+    );
 
     return {
       'worker': worker.toJson(),
-      'months': [
-        for (final key in months)
-          _monthJson(PayrollCalculator.monthly(
-            monthKey: key,
-            attendances: attendances,
-            entries: entries,
-          )),
-      ],
+      'months': series.map(_monthJson).toList(),
       'balance': _balanceJson(balance),
       'entries': entries.map((e) => e.toJson()).toList(),
-      'advance_carried_over': duThangTruoc,
-      'advance_available_now': PayrollCalculator.roundMoney(
-        thangNay.remainingAdvance + duThangTruoc,
-      ),
+      'advance_carried_over': duTruocThangNay,
+      'advance_available_now': thangNay.remainingAdvance,
     };
   }
 
@@ -731,6 +724,11 @@ class PayrollService {
         monthKey: monthKey,
         attendances: attendances,
         entries: entries,
+        carriedOverAdvance: PayrollCalculator.carriedOverAdvance(
+          beforeMonthKey: monthKey,
+          attendances: attendances,
+          entries: entries,
+        ),
       );
 
       tongThuNhap += balance.totalEarned;
@@ -816,11 +814,11 @@ class PayrollService {
         monthKey: monthKey,
         attendances: attendances,
         entries: entries,
-      ),
-      carriedOver: PayrollCalculator.carriedOverAdvance(
-        beforeMonthKey: monthKey,
-        attendances: attendances,
-        entries: entries,
+        carriedOverAdvance: PayrollCalculator.carriedOverAdvance(
+          beforeMonthKey: monthKey,
+          attendances: attendances,
+          entries: entries,
+        ),
       ),
       requested: amount,
     );
@@ -1251,6 +1249,10 @@ class PayrollService {
         'income': m.income,
         'advance_cap': m.advanceCap,
         'advanced': m.advanced,
+        // Dư mang vào tháng này từ các tháng trước — 0 nếu [m] được tính đơn
+        // lẻ (monthReport/seasonReport, xem lại đúng tháng đó không quan tâm
+        // quá khứ), khác 0 nếu [m] tới từ monthlySeries/moneySheet/crewMoney.
+        'carried_over_advance': m.carriedOverAdvance,
         'remaining_advance': m.remainingAdvance,
         'over_cap': m.overCap,
       };

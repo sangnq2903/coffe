@@ -481,19 +481,28 @@ class _WorkerMoneyScreenState extends State<WorkerMoneyScreen> {
                 children: [
                   for (var i = 0; i < sheet.months.length; i++) ...[
                     if (i > 0) const Divider(height: 1),
-                    _monthTile(sheet.months[i]),
+                    _monthTile(sheet.months[i], laThangMoiNhat: i == sheet.months.length - 1),
                   ],
                 ],
               ),
       );
 
-  Widget _monthTile(MonthlyPayroll m) {
+  /// [laThangMoiNhat]: tháng cuối trong danh sách — tháng nào có công/khoản
+  /// tiền sau nó thì dư của nó coi như đã "chuyển" hết sang tháng đó rồi, dù
+  /// tháng sau có thật sự dùng hay không: đi tiếp hay dừng lại thì dư cũng
+  /// không còn nằm ở tháng này nữa. Chỉ tháng cuối cùng mới là dư **thật sự
+  /// còn** tính tới bây giờ — các tháng trước đó ghi "đã chuyển sang tháng
+  /// sau" để khỏi đếm nhầm hai lần (ông từng thấy tháng 9 vẫn hiện "còn ứng
+  /// 433.334" trong khi khoản đó đã nằm trong số ứng được của tháng 10 rồi).
+  Widget _monthTile(MonthlyPayroll m, {required bool laThangMoiNhat}) {
     final hetMuc = m.remainingAdvance <= 0;
+    final nhan = laThangMoiNhat
+        ? (hetMuc ? 'hết mức ứng' : 'còn ứng ${formatMoney(m.remainingAdvance)}')
+        : (hetMuc ? 'không có dư' : 'dư ${formatMoney(m.remainingAdvance)} đã chuyển sang tháng sau');
     return ExpansionTile(
       title: Text('Tháng ${m.monthKey.substring(5)}/${m.monthKey.substring(0, 4)}'),
       subtitle: Text(
-        '${formatDecimal(m.workUnits)} công • thu nhập ${formatMoney(m.income)} • '
-        '${hetMuc ? 'hết mức ứng' : 'còn ứng ${formatMoney(m.remainingAdvance)}'}',
+        '${formatDecimal(m.workUnits)} công • thu nhập ${formatMoney(m.income)} • $nhan',
         style: TextStyle(color: m.overCap ? AppTheme.offline : null),
       ),
       children: [
@@ -508,15 +517,30 @@ class _WorkerMoneyScreenState extends State<WorkerMoneyScreen> {
               const Divider(height: 16),
               _line('Thu nhập của tháng', m.income),
               _line('Trần ứng (50% thu nhập)', m.advanceCap),
+              if (m.carriedOverAdvance > 0)
+                _line('Dư mang từ tháng trước', m.carriedOverAdvance),
               _line('Đã ứng trong tháng', m.advanced),
-              _line('Còn được ứng', m.remainingAdvance,
-                  color: hetMuc ? AppTheme.offline : AppTheme.primary, bold: true),
+              _line(
+                laThangMoiNhat ? 'Còn được ứng' : 'Dư chuyển sang tháng sau',
+                m.remainingAdvance,
+                color: hetMuc ? AppTheme.offline : AppTheme.primary,
+                bold: true,
+              ),
+              if (!laThangMoiNhat && !hetMuc)
+                const Padding(
+                  padding: EdgeInsets.only(top: 2),
+                  child: Text(
+                    'Số này đã gộp vào trần của tháng kế tiếp, không phải khoản '
+                    'riêng còn ứng được ở tháng này nữa.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  ),
+                ),
               if (m.overCap)
                 const Padding(
                   padding: EdgeInsets.only(top: AppTheme.gapSm),
                   child: Text(
-                    'Tháng này đã ứng vượt trần. Nợ dồn sang tháng sau không làm '
-                    'trần tháng sau cao lên.',
+                    'Tháng này đã ứng vượt trần, kể cả dư mang từ tháng trước. Nợ '
+                    'dồn sang tháng sau không làm trần tháng sau cao lên.',
                     style: TextStyle(fontSize: 12, color: AppTheme.offline),
                   ),
                 ),

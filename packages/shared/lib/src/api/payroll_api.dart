@@ -780,6 +780,7 @@ MonthlyPayroll monthlyPayrollFromJson(Map<String, Object?> json) => MonthlyPayro
       allowance: asDouble(json['allowance']),
       deduction: asDouble(json['deduction']),
       advanced: asDouble(json['advanced']),
+      carriedOverAdvance: asDouble(json['carried_over_advance']),
     );
 
 WorkerBalance workerBalanceFromJson(Object? raw) {
