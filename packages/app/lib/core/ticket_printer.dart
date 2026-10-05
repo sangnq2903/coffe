@@ -1,12 +1,14 @@
 import 'dart:typed_data';
 
 import 'package:canxe_shared/canxe_shared.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import 'formatters.dart';
+import 'tai_file.dart';
 
 /// Dựng và in phiếu cân.
 ///
@@ -28,9 +30,15 @@ abstract final class TicketPrinter {
     return theme;
   }
 
-  /// Mở hộp thoại in của hệ điều hành/trình duyệt.
+  /// Mở hộp thoại in của hệ điều hành. Trên web, trình duyệt chặn in từ khung
+  /// ẩn mà không báo lỗi nên nút bấm không có phản hồi — khi đó tải PDF về để
+  /// mở và in bằng Ctrl+P, cách này luôn hiện file ra.
   static Future<void> print(WeighTicket ticket, {String? companyName}) async {
     final document = await build(ticket, companyName: companyName);
+    if (kIsWeb) {
+      await luuFile(document, 'Phieu-can-${ticket.ticketNo}.pdf', 'application/pdf');
+      return;
+    }
     await Printing.layoutPdf(
       onLayout: (_) => document,
       name: 'Phieu-can-${ticket.ticketNo}',
@@ -40,7 +48,12 @@ abstract final class TicketPrinter {
   /// Chia sẻ/lưu file PDF — hữu ích trên điện thoại khi cần gửi phiếu cho khách.
   static Future<void> share(WeighTicket ticket, {String? companyName}) async {
     final document = await build(ticket, companyName: companyName);
-    await Printing.sharePdf(bytes: document, filename: 'Phieu-can-${ticket.ticketNo}.pdf');
+    final ten = 'Phieu-can-${ticket.ticketNo}.pdf';
+    if (kIsWeb) {
+      await luuFile(document, ten, 'application/pdf');
+      return;
+    }
+    await Printing.sharePdf(bytes: document, filename: ten);
   }
 
   static Future<Uint8List> build(WeighTicket ticket, {String? companyName}) async {
