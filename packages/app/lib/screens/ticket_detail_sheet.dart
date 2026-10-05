@@ -1,6 +1,7 @@
 import 'package:canxe_shared/canxe_shared.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
 import '../core/formatters.dart';
@@ -68,15 +69,31 @@ class _TicketDetailViewState extends State<TicketDetailView> {
   @override
   void initState() {
     super.initState();
-    _client?.danhSachMayIn().then((ds) {
-      if (!mounted) return;
-      setState(() {
-        _mayIn = ds.may;
-        _mayInChon = ds.macDinh ?? (ds.may.isNotEmpty ? ds.may.first : null);
-      });
-    }).catchError((_) {}).whenComplete(() {
+    _taiDanhSachMayIn().whenComplete(() {
       if (mounted) setState(() => _dangDoMayIn = false);
     });
+  }
+
+  /// App native dò máy in ngay trên máy đang chạy app; web hỏi máy chủ đang phục vụ trang.
+  Future<void> _taiDanhSachMayIn() async {
+    try {
+      if (kIsWeb) {
+        final ds = await _client!.danhSachMayIn();
+        if (!mounted) return;
+        setState(() {
+          _mayIn = ds.may;
+          _mayInChon = ds.macDinh ?? (ds.may.isNotEmpty ? ds.may.first : null);
+        });
+      } else {
+        final mays = await Printing.listPrinters();
+        if (!mounted) return;
+        final mac = mays.where((p) => p.isDefault).firstOrNull ?? mays.firstOrNull;
+        setState(() {
+          _mayIn = [for (final p in mays) p.name];
+          _mayInChon = mac?.name;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -434,10 +451,27 @@ class _TicketDetailViewState extends State<TicketDetailView> {
     final may = _mayInChon;
     if (may == null) {
       await TicketPrinter.print(_ticket);
+      _dongSauKhiIn('Đã mở phiếu để in');
+      return;
+    }
+    if (!kIsWeb) {
+      final ok = await TicketPrinter.inTrucTiep(_ticket, may);
+      _dongSauKhiIn(ok ? 'Đã gửi phiếu tới máy in: $may' : 'Không gửi được tới máy in $may');
       return;
     }
     final bytes = await TicketPrinter.build(_ticket);
     await _client!.inPdfTrenMay(bytes, may);
+    _dongSauKhiIn('Đã gửi phiếu tới máy in: $may');
+  }
+
+  /// Đóng khung chi tiết và hiện thông báo ở màn hình chính — thông báo gắn với
+  /// ScaffoldMessenger toàn app nên vẫn còn hiện sau khi khung đã đóng.
+  void _dongSauKhiIn(String noiDung) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(noiDung), duration: const Duration(seconds: 4)),
+    );
+    Navigator.pop(context, _daDoi);
   }
 
   Widget _totals() => Container(

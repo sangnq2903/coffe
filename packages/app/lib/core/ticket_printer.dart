@@ -45,6 +45,18 @@ abstract final class TicketPrinter {
     );
   }
 
+  /// In thẳng ra máy in đã đặt tên, không hiện hộp thoại — chỉ dùng trên app
+  /// native (Windows), nơi máy in gắn trực tiếp vào máy đang chạy app.
+  static Future<bool> inTrucTiep(WeighTicket ticket, String tenMayIn,
+      {String? companyName}) async {
+    final document = await build(ticket, companyName: companyName);
+    return Printing.directPrintPdf(
+      printer: Printer(url: tenMayIn),
+      onLayout: (_) async => document,
+      name: 'Phieu-can-${ticket.ticketNo}',
+    );
+  }
+
   /// Chia sẻ/lưu file PDF — hữu ích trên điện thoại khi cần gửi phiếu cho khách.
   static Future<void> share(WeighTicket ticket, {String? companyName}) async {
     final document = await build(ticket, companyName: companyName);
