@@ -83,6 +83,7 @@ class WeighTicket {
     String? createdBy,
   }) {
     final now = DateTime.now();
+    final weighedAt = firstWeight == null ? null : (firstWeightAt ?? now);
     return WeighTicket(
       id: newUuid(),
       ticketNo: ticketNo,
@@ -98,10 +99,11 @@ class WeighTicket {
       goodsName: goodsName,
       yieldRatio: yieldRatio,
       firstWeight: firstWeight,
-      firstWeightAt: firstWeight == null ? null : (firstWeightAt ?? now),
+      firstWeightAt: weighedAt,
       note: note,
       createdBy: createdBy,
-      createdAt: now,
+      // Ngày của phiếu theo giờ cân lần 1, để phiếu nhập bù vẫn nằm đúng ngày.
+      createdAt: weighedAt ?? now,
       updatedAt: now,
     );
   }
@@ -244,6 +246,7 @@ class WeighTicket {
     String? note,
     String? createdBy,
     bool? deleted,
+    DateTime? createdAt,
     DateTime? updatedAt,
   }) =>
       WeighTicket(
@@ -266,7 +269,7 @@ class WeighTicket {
         secondWeightAt: secondWeightAt ?? this.secondWeightAt,
         note: note ?? this.note,
         createdBy: createdBy ?? this.createdBy,
-        createdAt: createdAt,
+        createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? DateTime.now(),
         deleted: deleted ?? this.deleted,
       );

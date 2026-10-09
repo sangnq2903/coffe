@@ -74,6 +74,10 @@ class StationUplink {
     try {
       final channel = _connect(wsUri);
       _channel = channel;
+      // Máy chủ từ chối nâng cấp WebSocket (đường chưa có, sai phiếu phiên) thì lỗi
+      // nằm ở `ready` chứ không ở luồng dữ liệu; không bắt thì rơi ra ngoài và làm
+      // sập cả tiến trình trạm đang cân.
+      unawaited(channel.ready.then<void>((_) {}, onError: (_) => _onDisconnected(central)));
       _socketSub = channel.stream.listen(
         (_) {},
         onDone: () => _onDisconnected(central),

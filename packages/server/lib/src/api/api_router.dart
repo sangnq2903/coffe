@@ -564,7 +564,13 @@ class ApiRouter {
       if (chan != null) return chan;
       final bytes = await _bytes(request);
       return _guard(() => _json(
-            duLieu.nhap(bytes, matKhau: _matKhau(request)).toJson(),
+            duLieu
+                .nhap(
+                  bytes,
+                  matKhau: _matKhau(request),
+                  uuTienFile: request.url.queryParameters['uu-tien-file'] == '1',
+                )
+                .toJson(),
           ));
     });
 
@@ -612,9 +618,9 @@ class ApiRouter {
 
     router.get('/ws/thay-doi', _changeSocketHandler());
     router.get('/ws/scale', _scaleSocketHandler());
-    if (config.isCentral) {
-      router.get('/ws/station', _stationUplinkHandler());
-    }
+    // Trạm cũng nhận được kênh này: một trạm khác có thể đẩy số cân sang đây để
+    // người nối vào máy chủ này thấy bàn cân của trạm đó (xem relay_uplinks).
+    router.get('/ws/station', _stationUplinkHandler());
 
     // Lưới đỡ cuối cùng. `_guard` chỉ bọc được phần đồng bộ của mỗi tuyến, mà
     // việc đọc thân yêu cầu lại nằm trước đó và là bất đồng bộ — lỗi ném từ đấy

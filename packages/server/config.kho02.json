@@ -29,6 +29,15 @@
     "path": "data/canxe-kho02.db"
   },
 
+  "relay_uplinks": [
+    {
+      "_ghi_chu": "Đẩy thêm số cân KHO02 sang máy chủ KHO01 (cổng 9081) để app nối vào đó vẫn thấy bàn cân KHO02. Máy 100.76.81.118 phải chạy bản phần mềm mới.",
+      "url": "http://100.76.81.118:9081",
+      "username": "admin2",
+      "password": "admin2"
+    }
+  ],
+
   "web_root": "web",
 
   "scale": {

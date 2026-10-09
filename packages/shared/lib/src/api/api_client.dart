@@ -195,12 +195,25 @@ class ApiClient {
       DuLieuTomTat.fromJson(await _guiFile('/api/du-lieu/xem-truoc', bytes, matKhau));
 
   /// Gộp dữ liệu trong file vào cơ sở dữ liệu của máy chủ.
-  Future<KetQuaNhapDuLieu> nhapDuLieu(Uint8List bytes, {String? matKhau}) async =>
-      KetQuaNhapDuLieu.fromJson(await _guiFile('/api/du-lieu/nhap', bytes, matKhau));
+  ///
+  /// [uuTienFile]: bản trong file thắng cả bản đang có trên máy chủ dù bản kia
+  /// sửa sau (trừ tài khoản đăng nhập).
+  Future<KetQuaNhapDuLieu> nhapDuLieu(
+    Uint8List bytes, {
+    String? matKhau,
+    bool uuTienFile = false,
+  }) async =>
+      KetQuaNhapDuLieu.fromJson(await _guiFile(
+        '/api/du-lieu/nhap',
+        bytes,
+        matKhau,
+        query: uuTienFile ? const {'uu-tien-file': '1'} : null,
+      ));
 
   Future<Map<String, Object?>> _guiFile(
-      String path, Uint8List bytes, String? matKhau) async {
-    final uri = _uri(path);
+      String path, Uint8List bytes, String? matKhau,
+      {Map<String, String>? query}) async {
+    final uri = _uri(path, query);
     final http.Response res;
     try {
       res = await _http
@@ -404,9 +417,11 @@ class ApiClient {
       WeighTicket.fromJson(await _postMap('/api/tickets/$id', changes));
 
   /// Ghi cân lần 2 và chốt phiếu.
-  Future<WeighTicket> completeTicket(String id, double secondWeight, {String? note}) async =>
+  Future<WeighTicket> completeTicket(String id, double secondWeight,
+          {String? note, DateTime? secondWeightAt}) async =>
       WeighTicket.fromJson(await _postMap('/api/tickets/$id/second-weigh', {
         'second_weight': secondWeight,
+        if (secondWeightAt != null) 'second_weight_at': timeToMillis(secondWeightAt),
         if (note != null) 'note': note,
       }));
 

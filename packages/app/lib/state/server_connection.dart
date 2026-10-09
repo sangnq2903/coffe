@@ -45,7 +45,13 @@ class ServerConnection extends ChangeNotifier {
 
   /// Trạm đang được chọn để theo dõi số cân và lập phiếu.
   String get stationCode {
-    if (settings.stationCode.isNotEmpty) return settings.stationCode;
+    // Trạm đã lưu chỉ còn giá trị khi máy chủ đang nối thật sự biết trạm đó;
+    // đổi sang máy chủ khác mà giữ nguyên mã cũ thì màn hình cân kẹt ở kho không có đầu cân.
+    final saved = settings.stationCode;
+    if (saved.isNotEmpty &&
+        (_stations.isEmpty || _stations.any((s) => s.code == saved))) {
+      return saved;
+    }
     final withScale = _stations.where((s) => s.hasScale).firstOrNull;
     return withScale?.code ?? _serverInfo?.stationCode ?? '';
   }

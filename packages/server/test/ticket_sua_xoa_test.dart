@@ -125,6 +125,65 @@ void main() {
       expect(sua.productWeight, 4000);
     });
 
+    test('nhập tay giờ cân lần 1 khi lập phiếu, phiếu nằm đúng ngày đó', () async {
+      final luc = DateTime.now().subtract(const Duration(days: 3, hours: 2));
+      final p = WeighTicket.fromJson(await post('/api/tickets', {
+        'plate_no': '47C-12345',
+        'goods_name': 'Cà nhân',
+        'first_weight': 12000,
+        'first_weight_at': timeToMillis(luc),
+      }));
+      expect(p.firstWeightAt!.difference(luc).inSeconds.abs(), lessThan(2));
+      expect(p.createdAt.difference(luc).inSeconds.abs(), lessThan(2));
+    });
+
+    test('chốt cân lần 2 với giờ nhập tay', () async {
+      final luc1 = DateTime.now().subtract(const Duration(hours: 5));
+      final luc2 = DateTime.now().subtract(const Duration(hours: 4));
+      final p = WeighTicket.fromJson(await post('/api/tickets', {
+        'plate_no': '47C-12345',
+        'goods_name': 'Cà nhân',
+        'first_weight': 12000,
+        'first_weight_at': timeToMillis(luc1),
+      }));
+      final xong = WeighTicket.fromJson(await post('/api/tickets/${p.id}/second-weigh', {
+        'second_weight': 5000,
+        'second_weight_at': timeToMillis(luc2),
+      }));
+      expect(xong.secondWeightAt!.difference(luc2).inSeconds.abs(), lessThan(2));
+    });
+
+    test('sửa giờ cân của phiếu đã lập, phiếu sang ngày mới', () async {
+      final p = await lapPhieu();
+      final luc1 = DateTime.now().subtract(const Duration(days: 2, hours: 3));
+      final luc2 = luc1.add(const Duration(minutes: 40));
+      final sua = WeighTicket.fromJson(await post('/api/tickets/${p.id}', {
+        'second_weight': 4000,
+        'first_weight_at': timeToMillis(luc1),
+        'second_weight_at': timeToMillis(luc2),
+      }));
+      expect(sua.firstWeightAt!.difference(luc1).inSeconds.abs(), lessThan(2));
+      expect(sua.secondWeightAt!.difference(luc2).inSeconds.abs(), lessThan(2));
+      expect(sua.createdAt.difference(luc1).inSeconds.abs(), lessThan(2));
+    });
+
+    test('giờ cân lần 2 trước lần 1 hoặc ở tương lai thì bị từ chối', () async {
+      final p = await lapPhieu();
+      final truoc = DateTime.now().subtract(const Duration(days: 1));
+      await post(
+          '/api/tickets/${p.id}',
+          {
+            'second_weight': 4000,
+            'first_weight_at': timeToMillis(DateTime.now()),
+            'second_weight_at': timeToMillis(truoc),
+          },
+          expectStatus: 400);
+      await post(
+          '/api/tickets/${p.id}',
+          {'first_weight_at': timeToMillis(DateTime.now().add(const Duration(days: 1)))},
+          expectStatus: 400);
+    });
+
     test('tỷ lệ ngoài 0–100 thì bị từ chối', () async {
       final p = await lapPhieu();
       await post('/api/tickets/${p.id}', {'yield_ratio': 150}, expectStatus: 400);

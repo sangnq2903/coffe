@@ -394,7 +394,8 @@ class Repository {
         first_weight_at = excluded.first_weight_at, second_weight = excluded.second_weight,
         second_weight_at = excluded.second_weight_at, net_weight = excluded.net_weight,
         product_weight = excluded.product_weight, note = excluded.note,
-        created_by = excluded.created_by, updated_at = excluded.updated_at,
+        created_by = excluded.created_by, created_at = excluded.created_at,
+        updated_at = excluded.updated_at,
         deleted = excluded.deleted, dirty = excluded.dirty
       WHERE excluded.updated_at >= tickets.updated_at
     ''', [

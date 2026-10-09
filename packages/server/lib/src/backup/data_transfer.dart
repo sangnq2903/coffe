@@ -175,7 +175,14 @@ class DataTransferService {
   /// Đổi lại, cách này **không xoá được** bản ghi đang có mà file không có.
   /// Muốn quay về đúng nguyên trạng một ngày nào đó thì phải dừng máy chủ rồi
   /// chép đè file — xem hướng dẫn trong README.
-  KetQuaNhap nhap(List<int> duLieu, {String? matKhau}) {
+  ///
+  /// [uuTienFile]: coi mọi bản ghi trong file là vừa sửa lúc nhập, nên file
+  /// thắng mọi bản đang có trên máy. Dùng khi biết chắc file là bản đúng — ví
+  /// dụ chấm công trên trạm đúng mà trung tâm lại giữ bản sửa sau nhưng sai.
+  /// Gộp thường thì bản sai đó mới hơn nên thắng, nhập bao nhiêu lần cũng vậy.
+  /// Đóng dấu giờ mới còn để máy khác kéo về được: máy trạm chỉ hỏi trung tâm
+  /// những gì sửa sau lần kéo trước, bản ghi mang giờ cũ sẽ không bao giờ tới.
+  KetQuaNhap nhap(List<int> duLieu, {String? matKhau, bool uuTienFile = false}) {
     final bytes = _moNeuMaHoa(duLieu, matKhau);
     final tam = _thuMucTam();
     try {
@@ -193,12 +200,13 @@ class DataTransferService {
       chupNhanh(vao: anToan.path);
 
       final truoc = tomTat();
-      AppLog.write('[nhap-du-lieu] gộp ${nguon.tongDong} dòng từ file '
+      AppLog.write('[nhap-du-lieu] gộp ${nguon.tongDong} dòng từ file'
+          '${uuTienFile ? ', ưu tiên bản trong file' : ''} '
           '(đã cất bản chụp ở ${anToan.path})');
 
       // markDirty: true để dữ liệu vừa cứu được còn chảy tiếp sang máy khác.
       // Không sợ nó đè bậy lên trung tâm: luật ghi đè vẫn là bản mới hơn thắng.
-      repo.applyPayload(_docToanBo(file.path), markDirty: true);
+      repo.applyPayload(_docToanBo(file.path, uuTienFile: uuTienFile), markDirty: true);
 
       final sau = tomTat();
       AppLog.write('[nhap-du-lieu] xong, thêm mới ${sau.tongDong - truoc.tongDong} dòng');
@@ -319,9 +327,25 @@ class DataTransferService {
 
   /// Mở file bằng [AppDatabase] để bản cũ được nâng cấp lược đồ trước khi đọc,
   /// rồi đọc hết ra một gói.
-  SyncPayload _docToanBo(String duongDan) {
+  SyncPayload _docToanBo(String duongDan, {bool uuTienFile = false}) {
     final db = AppDatabase.open(duongDan);
     try {
+      if (uuTienFile) {
+        // Sửa trên bản sao tạm của file, không đụng gì tới dữ liệu thật.
+        // Chừa bảng tài khoản ra: để file thắng ở đó là mật khẩu vừa đổi trên
+        // máy này bị mật khẩu cũ trong file đè mất, khoá luôn người đang dùng.
+        // Lấy mốc sau cả bản mới nhất đang có trên máy chứ không chỉ "bây giờ":
+        // máy nào từng chạy đồng hồ nhanh thì có bản ghi mang giờ tương lai, và
+        // file vẫn thua đúng những bản đó.
+        var luc = timeToMillis(DateTime.now());
+        for (final t in _bang.keys) {
+          final m = database.db.select('SELECT MAX(updated_at) AS m FROM $t').first['m'];
+          if (m is int && m >= luc) luc = m + 1;
+        }
+        for (final t in _bang.keys.where((t) => t != 'nguoi_dung')) {
+          db.db.execute('UPDATE $t SET updated_at = ?', [luc]);
+        }
+      }
       return Repository(db).toanBoDuLieu();
     } finally {
       db.dispose();

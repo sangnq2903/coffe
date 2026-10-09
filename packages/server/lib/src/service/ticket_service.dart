@@ -55,6 +55,9 @@ class TicketService {
       );
     }
 
+    final firstWeightAt = asTimeOrNull(body['first_weight_at']);
+    _validateTimes(firstWeightAt, null);
+
     final vehicle = _resolveVehicle(plateNo, body);
     final customer = _resolveCustomer(body);
     final goods = _resolveGoods(body);
@@ -77,6 +80,7 @@ class TicketService {
       goodsName: goods?.name ?? asString(body['goods_name']),
       yieldRatio: yieldRatio,
       firstWeight: firstWeight,
+      firstWeightAt: firstWeightAt,
       note: asStringOrNull(body['note']),
       createdBy: asStringOrNull(body['created_by']),
     );
@@ -113,9 +117,12 @@ class TicketService {
       );
     }
 
+    final secondWeightAt = asTimeOrNull(body['second_weight_at']) ?? DateTime.now();
+    _validateTimes(ticket.firstWeightAt, secondWeightAt);
+
     final updated = ticket.copyWith(
       secondWeight: secondWeight,
-      secondWeightAt: DateTime.now(),
+      secondWeightAt: secondWeightAt,
       status: TicketStatus.hoanThanh,
       note: asStringOrNull(body['note']) ?? ticket.note,
       updatedAt: DateTime.now(),
@@ -123,7 +130,7 @@ class TicketService {
     return _repo.upsertTicket(updated);
   }
 
-  /// Sửa thông tin phiếu (khách hàng, loại hàng, tỷ lệ, ghi chú, số cân).
+  /// Sửa thông tin phiếu (khách hàng, loại hàng, tỷ lệ, ghi chú, số cân, giờ cân).
   WeighTicket update(String id, Map<String, Object?> body) {
     final ticket = _repo.ticketById(id);
     if (ticket == null || ticket.deleted) {
@@ -156,6 +163,12 @@ class TicketService {
 
     final firstWeight = asDoubleOrNull(body['first_weight']) ?? ticket.firstWeight;
     final secondWeight = asDoubleOrNull(body['second_weight']) ?? ticket.secondWeight;
+    final newFirstAt = asTimeOrNull(body['first_weight_at']);
+    final newSecondAt = asTimeOrNull(body['second_weight_at']);
+    final firstWeightAt = newFirstAt ?? ticket.firstWeightAt;
+    final secondWeightAt = newSecondAt ??
+        (secondWeight != null ? (ticket.secondWeightAt ?? DateTime.now()) : ticket.secondWeightAt);
+    _validateTimes(firstWeightAt, secondWeight == null ? null : secondWeightAt);
 
     final updated = ticket.copyWith(
       direction: body.containsKey('direction')
@@ -172,11 +185,12 @@ class TicketService {
       goodsName: goods?.name ?? asStringOrNull(body['goods_name']) ?? ticket.goodsName,
       yieldRatio: yieldRatio,
       firstWeight: firstWeight,
+      firstWeightAt: firstWeightAt,
       secondWeight: secondWeight,
       status: secondWeight != null ? TicketStatus.hoanThanh : ticket.status,
-      secondWeightAt: secondWeight != null
-          ? (ticket.secondWeightAt ?? DateTime.now())
-          : ticket.secondWeightAt,
+      secondWeightAt: secondWeightAt,
+      // Ngày của phiếu đi theo giờ cân lần 1 nên sửa giờ thì phiếu sang ngày mới.
+      createdAt: newFirstAt,
       note: asStringOrNull(body['note']) ?? ticket.note,
       updatedAt: DateTime.now(),
     );
@@ -196,6 +210,20 @@ class TicketService {
       note: note,
       updatedAt: DateTime.now(),
     ));
+  }
+
+  /// Giờ cân gõ tay: không được ở tương lai, và cân lần 2 không được trước lần 1.
+  void _validateTimes(DateTime? first, DateTime? second) {
+    final limit = DateTime.now().add(const Duration(minutes: 5));
+    if (first != null && first.isAfter(limit)) {
+      throw BusinessException('Giờ cân lần 1 không được ở tương lai.');
+    }
+    if (second != null && second.isAfter(limit)) {
+      throw BusinessException('Giờ cân lần 2 không được ở tương lai.');
+    }
+    if (first != null && second != null && second.isBefore(first)) {
+      throw BusinessException('Giờ cân lần 2 không được trước giờ cân lần 1.');
+    }
   }
 
   void _validateYieldRatio(double value) {

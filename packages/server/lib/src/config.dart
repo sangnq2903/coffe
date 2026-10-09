@@ -116,6 +116,32 @@ class ScaleConfig {
       };
 }
 
+/// Một máy chủ khác nhận thêm số cân realtime của trạm này (ngoài trung tâm).
+///
+/// Dùng khi người xem nối vào một máy chủ không phải trung tâm — ví dụ màn
+/// hình cân đặt ở kho khác — mà vẫn muốn thấy bàn cân của trạm này.
+class RelayTarget {
+  const RelayTarget({required this.url, required this.username, required this.password});
+
+  final String url;
+  final String username;
+  final String password;
+
+  static List<RelayTarget> parseList(Object? raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => e.cast<String, Object?>())
+        .map((e) => RelayTarget(
+              url: asString(e['url']),
+              username: asString(e['username']),
+              password: asString(e['password']),
+            ))
+        .where((e) => e.url.isNotEmpty && e.username.isNotEmpty && e.password.isNotEmpty)
+        .toList();
+  }
+}
+
 /// Toàn bộ cấu hình của một tiến trình server.
 class ServerConfig {
   const ServerConfig({
@@ -134,6 +160,7 @@ class ServerConfig {
     this.databasePath = 'data/canxe.db',
     this.webRoot = 'web',
     this.scale = const ScaleConfig(),
+    this.relayUplinks = const [],
   });
 
   factory ServerConfig.fromJson(Map<String, Object?> json) {
@@ -159,6 +186,7 @@ class ServerConfig {
       databasePath: asString(db['path'], fallback: 'data/canxe.db'),
       webRoot: asString(json['web_root'], fallback: 'web'),
       scale: ScaleConfig.fromJson(scale),
+      relayUplinks: RelayTarget.parseList(json['relay_uplinks']),
     );
   }
 
@@ -210,6 +238,9 @@ class ServerConfig {
   final String webRoot;
   final ScaleConfig scale;
 
+  /// Các máy chủ khác cũng được đẩy số cân realtime lên, ngoài trung tâm.
+  final List<RelayTarget> relayUplinks;
+
   bool get isCentral => role == ServerRole.central;
 
   bool get isStation => role == ServerRole.station;
@@ -237,6 +268,8 @@ class ServerConfig {
     int? port,
     String? stationCode,
     String? centralUrl,
+    String? centralUsername,
+    String? centralPassword,
     String? databasePath,
     String? webRoot,
     ScaleConfig? scale,
@@ -251,12 +284,13 @@ class ServerConfig {
         address: address,
         publicBaseUrl: publicBaseUrl,
         centralUrl: centralUrl ?? this.centralUrl,
-        centralUsername: centralUsername,
-        centralPassword: centralPassword,
+        centralUsername: centralUsername ?? this.centralUsername,
+        centralPassword: centralPassword ?? this.centralPassword,
         syncIntervalSeconds: syncIntervalSeconds,
         databasePath: databasePath ?? this.databasePath,
         webRoot: webRoot ?? this.webRoot,
         scale: scale ?? this.scale,
+        relayUplinks: relayUplinks,
       );
 
   /// Thiếu tài khoản đăng nhập lên trung tâm.

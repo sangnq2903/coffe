@@ -227,6 +227,95 @@ void main() {
       may.db.dispose();
     });
 
+    test('ưu tiên file thì bản trong file đè cả bản mới hơn trên máy', () {
+      final cu = moMay('cu');
+      final kh = cu.repo.upsertCustomer(Customer.create(name: 'Tên đúng'));
+      final goi = cu.dv.xuat().duLieu;
+      cu.db.dispose();
+
+      final may = moMay('may');
+      may.repo.upsertCustomer(Customer(
+        id: kh.id,
+        code: kh.code,
+        name: 'Tên sửa sai',
+        updatedAt: DateTime.now().add(const Duration(minutes: 1)),
+      ));
+
+      may.dv.nhap(goi, uuTienFile: true);
+      expect(may.repo.customerById(kh.id)!.name, 'Tên đúng');
+      may.db.dispose();
+    });
+
+    group('chấm công', () {
+      /// Hai máy cùng một đoàn, một người — như trạm và trung tâm sau đồng bộ.
+      ({Crew doan, Worker nguoi}) chungDoan(Repository a, Repository b) {
+        final doan = a.payroll.upsertCrew(Crew.create(name: 'Đoàn 1'));
+        final nguoi = a.payroll.upsertWorker(Worker.create(crewId: doan.id, name: 'Tám'));
+        b.payroll.upsertCrew(doan);
+        b.payroll.upsertWorker(nguoi);
+        return (doan: doan, nguoi: nguoi);
+      }
+
+      Attendance cham(Repository repo, ({Crew doan, Worker nguoi}) c,
+              {required bool coMat, required DateTime luc}) =>
+          repo.payroll.upsertAttendance(Attendance(
+            id: newUuid(),
+            crewId: c.doan.id,
+            workerId: c.nguoi.id,
+            date: DateTime(2026, 10, 1),
+            present: coMat,
+            monthlyAmount: 9000000,
+            daysInMonth: 31,
+            updatedAt: luc,
+          ));
+
+      test('hai máy cùng chấm một người một ngày thì nhập không vỡ', () {
+        final tram = moMay('tram'), tt = moMay('tt');
+        final c = chungDoan(tram.repo, tt.repo);
+        final bayGio = DateTime.now();
+        cham(tt.repo, c, coMat: false, luc: bayGio.subtract(const Duration(hours: 1)));
+        cham(tram.repo, c, coMat: true, luc: bayGio);
+
+        tt.dv.nhap(tram.dv.xuat().duLieu);
+
+        final con = tt.repo.payroll.attendances();
+        expect(con, hasLength(1), reason: 'một người một ngày chỉ một bản');
+        expect(con.single.present, isTrue, reason: 'bản chấm sau thắng');
+        tram.db.dispose();
+        tt.db.dispose();
+      });
+
+      test('bản trên máy chấm sau thì gộp thường giữ máy, ưu tiên file thì lấy file', () {
+        final tram = moMay('tram'), tt = moMay('tt');
+        final c = chungDoan(tram.repo, tt.repo);
+        final bayGio = DateTime.now();
+        cham(tram.repo, c, coMat: true, luc: bayGio.subtract(const Duration(hours: 1)));
+        cham(tt.repo, c, coMat: false, luc: bayGio);
+        final goi = tram.dv.xuat().duLieu;
+
+        tt.dv.nhap(goi);
+        expect(tt.repo.payroll.attendances().single.present, isFalse);
+
+        tt.dv.nhap(goi, uuTienFile: true);
+        expect(tt.repo.payroll.attendances().single.present, isTrue);
+        tram.db.dispose();
+        tt.db.dispose();
+      });
+
+      test('bản chấm cũ hơn tới sau không xoá oan bản đang dùng', () {
+        final m = moMay('m'), x = moMay('x');
+        final c = chungDoan(m.repo, x.repo);
+        final bayGio = DateTime.now();
+        final moi = cham(m.repo, c, coMat: true, luc: bayGio);
+        cham(m.repo, c, coMat: false, luc: bayGio.subtract(const Duration(hours: 1)));
+
+        final con = m.repo.payroll.attendances();
+        expect(con.single.id, moi.id);
+        m.db.dispose();
+        x.db.dispose();
+      });
+    });
+
     test('nhập hai lần không nhân đôi dữ liệu', () {
       final cu = moMay('cu');
       doDuLieu(cu.repo);

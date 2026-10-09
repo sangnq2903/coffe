@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:canxe_server/canxe_server.dart';
 import 'package:canxe_shared/canxe_shared.dart';
-import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 /// Kiểm thử tầng dữ liệu của module chấm công.
@@ -182,17 +181,19 @@ void main() {
 
     test('một người một ngày chỉ được một bản ghi', () {
       cham(DateTime(2026, 9, 10));
-      // Chấm lần hai cùng ngày với id khác là tính công gấp đôi mà không ai
-      // nhìn ra — cơ sở dữ liệu phải chặn thẳng.
-      expect(
-        () => payroll.upsertAttendance(Attendance.create(
-          crewId: doanA.id,
-          workerId: nguoiThuong.id,
-          date: DateTime(2026, 9, 10),
-          monthlyAmount: 8000000,
-        )),
-        throwsA(isA<SqliteException>()),
-      );
+      // Chấm lần hai cùng ngày với id khác (hai máy cùng chấm rồi đồng bộ về)
+      // mà giữ cả hai là tính công gấp đôi. Bản chấm sau thắng, bản kia bị
+      // đánh dấu xoá — không được ném lỗi, vì lỗi ở đây làm hỏng cả lượt đồng
+      // bộ và lượt nhập dữ liệu.
+      final sau = payroll.upsertAttendance(Attendance.create(
+        crewId: doanA.id,
+        workerId: nguoiThuong.id,
+        date: DateTime(2026, 9, 10),
+        monthlyAmount: 8000000,
+      ));
+      final con = payroll.attendances(workerId: nguoiThuong.id);
+      expect(con, hasLength(1));
+      expect(con.single.id, sau.id);
     });
 
     test('tra được bản ghi của một ngày để sửa thay vì tạo mới', () {

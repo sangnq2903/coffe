@@ -45,6 +45,7 @@ class ServerApp {
   ScaleService? _scale;
   SyncWorker? _sync;
   StationUplink? _uplink;
+  final List<StationUplink> _relays = [];
   HttpServer? _httpServer;
   StreamSubscription<ScaleReading>? _scaleSub;
 
@@ -133,6 +134,21 @@ class ServerApp {
     _sync = SyncWorker(config: config, repo: _repo, session: session)..start();
     _uplink = StationUplink(config: config, readings: scale.readings, session: session)
       ..start();
+
+    // Đẩy thêm số cân sang các máy chủ khác được khai trong relay_uplinks, để
+    // app nối vào máy đó vẫn thấy bàn cân của trạm này. Mỗi máy một phiên đăng nhập riêng.
+    for (final relay in config.relayUplinks) {
+      final relayConfig = config.copyWith(
+        centralUrl: relay.url,
+        centralUsername: relay.username,
+        centralPassword: relay.password,
+      );
+      _relays.add(StationUplink(
+        config: relayConfig,
+        readings: scale.readings,
+        session: CentralSession(config: relayConfig),
+      )..start());
+    }
   }
 
   /// Ghi chính máy này vào bảng trạm để màn hình chọn trạm luôn có ít nhất một
@@ -270,6 +286,9 @@ class ServerApp {
     await _httpServer?.close(force: true);
     await _scaleSub?.cancel();
     await _uplink?.dispose();
+    for (final relay in _relays) {
+      await relay.dispose();
+    }
     await _sync?.dispose();
     await _scale?.dispose();
     _tuDong.dispose();

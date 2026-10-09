@@ -255,11 +255,14 @@ class _BackupCardState extends State<BackupCard> {
       }
     }
 
-    if (!mounted || !await _xacNhanNhap(file.ten, xem)) return;
+    if (!mounted) return;
+    final uuTienFile = await _xacNhanNhap(file.ten, xem);
+    if (uuTienFile == null) return;
 
     final mk = matKhau;
     await _chay(() async {
-      final kq = await _client!.nhapDuLieu(file!.bytes, matKhau: mk);
+      final kq = await _client!
+          .nhapDuLieu(file!.bytes, matKhau: mk, uuTienFile: uuTienFile);
       await _tai();
       if (mounted) await _khoeKetQua(kq);
     });
@@ -303,10 +306,14 @@ class _BackupCardState extends State<BackupCard> {
     );
   }
 
-  Future<bool> _xacNhanNhap(String tenFile, DuLieuTomTat xem) async =>
-      await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
+  /// Hỏi có nhập không. Trả về null khi huỷ, còn không thì trả về lựa chọn
+  /// có ưu tiên bản trong file hay không.
+  Future<bool?> _xacNhanNhap(String tenFile, DuLieuTomTat xem) {
+    var uuTienFile = false;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
           title: const Text('Nhập dữ liệu từ file này?'),
           content: SizedBox(
             width: 460,
@@ -333,33 +340,51 @@ class _BackupCardState extends State<BackupCard> {
                   ],
                 ),
                 const SizedBox(height: AppTheme.gapMd),
-                const Text(
-                  'Dữ liệu trong file sẽ được GỘP vào dữ liệu đang có, không xoá '
-                  'gì cả. Bản ghi nào trên máy mới hơn thì máy giữ nguyên, nên '
-                  'nhập nhầm một bản cũ không làm mất việc làm hôm nay.\n\n'
-                  'Máy chủ tự cất một bản chụp trước khi gộp.',
-                  style: TextStyle(fontSize: 13, height: 1.45),
+                Text(
+                  uuTienFile
+                      ? 'Bản ghi trong file sẽ ĐÈ lên bản đang có trên máy, kể cả '
+                          'bản trên máy sửa sau (riêng tài khoản đăng nhập vẫn giữ '
+                          'của máy). Bản ghi máy có mà file không có thì giữ nguyên.\n\n'
+                          'Máy chủ tự cất một bản chụp trước khi nhập.'
+                      : 'Dữ liệu trong file sẽ được GỘP vào dữ liệu đang có, không xoá '
+                          'gì cả. Bản ghi nào trên máy mới hơn thì máy giữ nguyên, nên '
+                          'nhập nhầm một bản cũ không làm mất việc làm hôm nay.\n\n'
+                          'Máy chủ tự cất một bản chụp trước khi gộp.',
+                  style: const TextStyle(fontSize: 13, height: 1.45),
+                ),
+                const SizedBox(height: AppTheme.gapSm),
+                CheckboxListTile(
+                  value: uuTienFile,
+                  onChanged: (v) => setLocal(() => uuTienFile = v ?? false),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('Ưu tiên dữ liệu trong file'),
+                  subtitle: const Text(
+                    'Chọn khi file là bản đúng nhưng máy này đang giữ bản sửa sau '
+                    'mà sai — ví dụ chấm công đúng ở trạm nhưng sai ở trung tâm.',
+                  ),
                 ),
               ],
             ),
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: () => Navigator.pop(context),
                 child: const Text('Huỷ')),
             FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Nhập vào'),
+              onPressed: () => Navigator.pop(context, uuTienFile),
+              child: Text(uuTienFile ? 'Nhập và đè' : 'Nhập vào'),
             ),
           ],
         ),
-      ) ??
-      false;
+      ),
+    );
+  }
 
   Future<void> _khoeKetQua(KetQuaNhapDuLieu kq) => showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text(kq.tongThemMoi > 0 ? 'Đã nhập xong' : 'Không có gì mới'),
+          title: Text(kq.tongThemMoi > 0 ? 'Đã nhập xong' : 'Đã nhập — không có bản ghi mới'),
           content: SizedBox(
             width: 420,
             child: Column(
@@ -374,8 +399,8 @@ class _BackupCardState extends State<BackupCard> {
                     Text('  • ${e.key}: +${formatInt(e.value)}'),
                 ] else
                   const Text(
-                    'Mọi bản ghi trong file đều đã có sẵn trên máy, hoặc bản '
-                    'trên máy mới hơn. Không phải lỗi — dữ liệu vẫn nguyên vẹn.',
+                    'Không có bản ghi nào mới thêm. Bản ghi đã có thì được cập '
+                    'nhật nếu bản trong file mới hơn (hoặc khi chọn ưu tiên file).',
                     style: TextStyle(fontSize: 13, height: 1.45),
                   ),
                 if (kq.duongDanAnToan.isNotEmpty) ...[

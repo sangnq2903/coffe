@@ -1,6 +1,7 @@
 import 'package:canxe_shared/canxe_shared.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
@@ -589,11 +590,47 @@ class _TicketEditDialogState extends State<_TicketEditDialog> {
           : formatDecimal(widget.ticket.secondWeight!));
   late final _note = TextEditingController(text: widget.ticket.note ?? '');
 
+  static final _dtFormat = DateFormat('dd/MM/yyyy HH:mm');
+  static final _dtRegex =
+      RegExp(r'^\s*(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2}|\d{4})\s+(\d{1,2})[:h](\d{2})\s*$');
+
+  late final _firstAt = TextEditingController(
+      text: widget.ticket.firstWeightAt == null ? '' : _dtFormat.format(widget.ticket.firstWeightAt!));
+  late final _secondAt = TextEditingController(
+      text: widget.ticket.secondWeightAt == null ? '' : _dtFormat.format(widget.ticket.secondWeightAt!));
+
   late WeighDirection _direction = widget.ticket.direction;
+
+  /// Đọc "dd/mm/yyyy hh:mm"; sai định dạng hoặc ngày không có thật thì trả `null`.
+  static DateTime? _docGio(String text) {
+    final m = _dtRegex.firstMatch(text);
+    if (m == null) return null;
+    var year = int.parse(m[3]!);
+    if (year < 100) year += 2000;
+    final month = int.parse(m[2]!);
+    final day = int.parse(m[1]!);
+    final hour = int.parse(m[4]!);
+    final minute = int.parse(m[5]!);
+    if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+    final value = DateTime(year, month, day, hour, minute);
+    return value.month == month && value.day == day ? value : null;
+  }
+
+  String? _kiemGio(String? v) =>
+      (v == null || v.trim().isEmpty || _docGio(v) != null) ? null : 'Gõ dd/mm/yyyy hh:mm';
+
+  /// Chỉ gửi giờ khi người dùng đã sửa, để giữ nguyên phần giây của giờ cân gốc.
+  Object? _gioMoi(TextEditingController c, DateTime? goc) {
+    final text = c.text.trim();
+    if (text.isEmpty) return null;
+    if (goc != null && _dtFormat.format(goc) == text) return null;
+    final value = _docGio(text);
+    return value == null ? null : timeToMillis(value);
+  }
 
   @override
   void dispose() {
-    for (final o in [_plate, _driver, _customer, _goods, _ratio, _first, _second, _note]) {
+    for (final o in [_plate, _driver, _customer, _goods, _ratio, _first, _second, _note, _firstAt, _secondAt]) {
       o.dispose();
     }
     super.dispose();
@@ -717,6 +754,28 @@ class _TicketEditDialogState extends State<_TicketEditDialog> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _firstAt,
+                        decoration: const InputDecoration(
+                            labelText: 'Giờ cân lần 1', hintText: 'dd/mm/yyyy hh:mm'),
+                        validator: _kiemGio,
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.gapSm),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _secondAt,
+                        decoration: const InputDecoration(
+                            labelText: 'Giờ cân lần 2', hintText: 'dd/mm/yyyy hh:mm'),
+                        validator: _kiemGio,
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: AppTheme.gapSm),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -769,6 +828,10 @@ class _TicketEditDialogState extends State<_TicketEditDialog> {
               'yield_ratio': parseNumber(_ratio.text),
               'first_weight': parseNumber(_first.text),
               if (l2 != null) 'second_weight': l2,
+              if (_gioMoi(_firstAt, widget.ticket.firstWeightAt) != null)
+                'first_weight_at': _gioMoi(_firstAt, widget.ticket.firstWeightAt),
+              if (_gioMoi(_secondAt, widget.ticket.secondWeightAt) != null)
+                'second_weight_at': _gioMoi(_secondAt, widget.ticket.secondWeightAt),
               'note': _note.text.trim(),
             });
           },

@@ -320,6 +320,7 @@ class PayrollRepository {
   }
 
   Attendance upsertAttendance(Attendance record, {bool dirty = true}) {
+    final xoa = record.deleted || _thuaNgayTrung(record, dirty: dirty);
     _db.execute('''
       INSERT INTO cham_cong (id, crew_id, worker_id, date, present, phase_id, station_code,
         monthly_amount, days_in_month, hours_off, standard_hours, note, created_by,
@@ -348,10 +349,47 @@ class PayrollRepository {
       record.note,
       record.createdBy,
       timeToMillis(record.updatedAt),
-      record.deleted ? 1 : 0,
+      xoa ? 1 : 0,
       dirty ? 1 : 0,
     ]);
     return attendanceById(record.id) ?? record;
+  }
+
+  /// Gỡ chỗ đụng nhau khi hai máy cùng chấm một người một ngày.
+  ///
+  /// Mỗi máy chấm thì tự sinh mã riêng, nên trạm và trung tâm cùng chấm một
+  /// người trong cùng ngày là ra hai bản ghi khác mã. Đem về một chỗ thì vấp
+  /// khoá "một người một ngày một bản ghi" và SQLite ném lỗi — lỗi đó làm hỏng
+  /// cả lượt nhập dữ liệu lẫn lượt đồng bộ, chứ không riêng dòng này.
+  ///
+  /// Luật gỡ giống luật đồng bộ: bản sửa sau thắng (bằng giờ thì so mã cho mọi
+  /// máy ra cùng một kết quả). Bản thua bị đánh dấu xoá chứ không bỏ hẳn, để
+  /// lần đồng bộ sau mang dấu xoá sang máy kia. Trả về true khi chính [record]
+  /// là bản thua — lúc đó nó vẫn được ghi, nhưng ở dạng đã xoá.
+  bool _thuaNgayTrung(Attendance record, {required bool dirty}) {
+    final ms = timeToMillis(record.updatedAt);
+
+    // Đã có đúng bản này mà mới hơn thì câu ghi bên dưới sẽ bỏ qua nó; gỡ chỗ
+    // trùng lúc này là xoá oan bản kia vì một bản ghi không được dùng.
+    final cu = _db.select('SELECT updated_at FROM cham_cong WHERE id = ?', [record.id]);
+    if (cu.isNotEmpty && (cu.first['updated_at'] as int) > ms) return false;
+
+    final khac = _db.select(
+      'SELECT id, updated_at FROM cham_cong '
+      'WHERE worker_id = ? AND date = ? AND deleted = 0 AND id <> ?',
+      [record.workerId, timeToMillis(record.date), record.id],
+    );
+    for (final r in khac) {
+      final msKhac = r['updated_at'] as int;
+      final idKhac = r['id'] as String;
+      if (msKhac > ms || (msKhac == ms && idKhac.compareTo(record.id) > 0)) return true;
+      _db.execute(
+        'UPDATE cham_cong SET deleted = 1, updated_at = ?, '
+        'dirty = CASE WHEN ? = 1 THEN 1 ELSE dirty END WHERE id = ?',
+        [ms, dirty ? 1 : 0, idKhac],
+      );
+    }
+    return false;
   }
 
   // ================================================================ sổ tiền
