@@ -661,16 +661,26 @@ class _TicketEditDialogState extends State<_TicketEditDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SegmentedButton<WeighDirection>(
-                  segments: const [
-                    ButtonSegment(
+                  segments: [
+                    const ButtonSegment(
                       value: WeighDirection.nhap,
                       icon: Icon(Icons.south_west, size: 18),
                       label: Text('Nhập kho'),
                     ),
-                    ButtonSegment(
+                    const ButtonSegment(
                       value: WeighDirection.xuat,
                       icon: Icon(Icons.north_east, size: 18),
                       label: Text('Xuất kho'),
+                    ),
+                    ButtonSegment(
+                      value: WeighDirection.canThue,
+                      enabled: context
+                              .read<ServerConnection>()
+                              .serverInfo
+                              ?.supportsDirection(WeighDirection.canThue) ??
+                          false,
+                      icon: const Icon(Icons.swap_vert, size: 18),
+                      label: const Text('Cân thuê'),
                     ),
                   ],
                   selected: {_direction},

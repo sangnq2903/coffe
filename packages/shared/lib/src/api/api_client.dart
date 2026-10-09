@@ -25,6 +25,7 @@ class ServerInfo {
     required this.version,
     this.scaleConnected = false,
     this.scalePort,
+    this.directions = const [],
   });
 
   factory ServerInfo.fromJson(Map<String, Object?> json) => ServerInfo(
@@ -34,6 +35,7 @@ class ServerInfo {
         version: asString(json['version']),
         scaleConnected: asBool(json['scale_connected']),
         scalePort: asStringOrNull(json['scale_port']),
+        directions: (json['directions'] as List? ?? const []).map((e) => '$e').toList(),
       );
 
   final String role;
@@ -42,6 +44,13 @@ class ServerInfo {
   final String version;
   final bool scaleConnected;
   final String? scalePort;
+
+  /// Các loại phiếu máy chủ hiểu. Máy chủ bản cũ không khai nên chỉ coi như có nhập và xuất.
+  final List<String> directions;
+
+  /// Máy chủ có lưu đúng loại phiếu này không; bản cũ gặp loại lạ sẽ lưu thành "nhập".
+  bool supportsDirection(WeighDirection d) =>
+      d == WeighDirection.nhap || d == WeighDirection.xuat || directions.contains(d.value);
 
   bool get isStation => role == 'station';
 
@@ -385,6 +394,7 @@ class ApiClient {
   Future<List<WeighTicket>> tickets({
     String? stationCode,
     TicketStatus? status,
+    WeighDirection? direction,
     String? query,
     DateTime? from,
     DateTime? to,
@@ -394,6 +404,7 @@ class ApiClient {
       (await _getList('/api/tickets', {
         if (stationCode != null && stationCode.isNotEmpty) 'station': stationCode,
         if (status != null) 'status': status.value,
+        if (direction != null) 'direction': direction.value,
         if (query != null && query.isNotEmpty) 'q': query,
         if (from != null) 'from': timeToMillis(from).toString(),
         if (to != null) 'to': timeToMillis(to).toString(),

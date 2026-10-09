@@ -77,6 +77,9 @@ class ApiRouter {
           'station_code': config.effectiveStationCode,
           'station_name': config.stationName,
           'version': appVersion,
+          // App dựa vào đây để biết máy chủ có hiểu loại phiếu "cân thuê" không;
+          // máy chủ cũ không có khoá này và sẽ lưu thầm phiếu cân thuê thành nhập.
+          'directions': WeighDirection.values.map((d) => d.value).toList(),
         }));
 
     router.post('/api/auth/setup', (Request request) async {
@@ -171,6 +174,7 @@ class ApiRouter {
           'station_code': config.effectiveStationCode,
           'station_name': config.stationName,
           'version': appVersion,
+          'directions': WeighDirection.values.map((d) => d.value).toList(),
           'scale_connected': scale?.connected ?? false,
           'scale_port': config.scale.simulate ? 'GIẢ LẬP' : config.scale.port,
           'time': timeToMillis(DateTime.now()),
@@ -390,6 +394,15 @@ class ApiRouter {
     // ----------------------------------------------------------- phiếu cân
     router.get('/api/tickets', (Request request) {
       final q = request.url.queryParameters;
+      // Loại phiếu lạ phải báo lỗi: để `parse` rơi về "nhập" thì gõ sai sẽ âm thầm
+      // lọc ra toàn phiếu nhập.
+      final rawDirection = q['direction'];
+      final direction = rawDirection == null || rawDirection.isEmpty
+          ? null
+          : WeighDirection.values.where((d) => d.value == rawDirection).firstOrNull;
+      if (rawDirection != null && rawDirection.isNotEmpty && direction == null) {
+        return _error('Loại phiếu không hợp lệ: $rawDirection.', 400);
+      }
       return _guard(() {
         if (q['station'] != null) _requireStation(request, q['station']);
         return _json(repo
@@ -397,6 +410,7 @@ class ApiRouter {
               stationCode: q['station'],
               allowedStations: _scope(request),
               status: q['status'] == null ? null : TicketStatus.parse(q['status']),
+              direction: direction,
               query: q['q'],
               from: asTimeOrNull(q['from']),
               to: asTimeOrNull(q['to']),

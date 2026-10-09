@@ -54,7 +54,11 @@ class TicketTile extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Icon(
-              ticket.direction == WeighDirection.nhap ? Icons.south_west : Icons.north_east,
+              switch (ticket.direction) {
+                WeighDirection.nhap => Icons.south_west,
+                WeighDirection.xuat => Icons.north_east,
+                WeighDirection.canThue => Icons.swap_vert,
+              },
               color: color,
               size: 18,
             ),
@@ -74,6 +78,7 @@ class TicketTile extends StatelessWidget {
                   // Cấp 2: hàng và khách — đọc khi đã dừng lại ở dòng này.
                   Text(
                     [
+                      ticket.direction.label,
                       ticket.goodsName.isEmpty ? '—' : ticket.goodsName,
                       ticket.customerName.isEmpty ? '—' : ticket.customerName,
                       if (showStation) ticket.stationCode,

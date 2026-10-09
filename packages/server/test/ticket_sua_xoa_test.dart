@@ -184,6 +184,56 @@ void main() {
           expectStatus: 400);
     });
 
+    test('lập phiếu cân thuê và đổi chiều của phiếu đã lập', () async {
+      final p = WeighTicket.fromJson(await post('/api/tickets', {
+        'plate_no': '47C-12345',
+        'goods_name': 'Cà nhân',
+        'first_weight': 12000,
+        'direction': 'can_thue',
+      }));
+      expect(p.direction, WeighDirection.canThue);
+
+      final sua = WeighTicket.fromJson(
+          await post('/api/tickets/${p.id}', {'direction': 'xuat'}));
+      expect(sua.direction, WeighDirection.xuat);
+      final lai = WeighTicket.fromJson(
+          await post('/api/tickets/${p.id}', {'direction': 'can_thue'}));
+      expect(lai.direction, WeighDirection.canThue);
+    });
+
+    test('máy chủ khai báo các loại phiếu mình hiểu để app biết có cân thuê', () async {
+      final res = await call('GET', '/api/auth/status');
+      final data = jsonDecode(await res.readAsString()) as Map;
+      expect(data['directions'], containsAll(['nhap', 'xuat', 'can_thue']));
+    });
+
+    test('lọc danh sách phiếu theo loại nhập, xuất, cân thuê', () async {
+      Future<void> lap(String bien, String chieu) => post('/api/tickets', {
+            'plate_no': bien,
+            'goods_name': 'Cà nhân',
+            'first_weight': 10000,
+            'direction': chieu,
+          });
+      await lap('47C-10001', 'nhap');
+      await lap('47C-10002', 'xuat');
+      await lap('47C-10003', 'can_thue');
+      await lap('47C-10004', 'can_thue');
+
+      Future<List<String>> bienTheoLoai(String chieu) async {
+        final res = await call('GET', '/api/tickets?direction=$chieu');
+        final data = jsonDecode(await res.readAsString()) as List;
+        return data.map((e) => (e as Map)['plate_no'] as String).toList()..sort();
+      }
+
+      expect(await bienTheoLoai('nhap'), ['47C-10001']);
+      expect(await bienTheoLoai('xuat'), ['47C-10002']);
+      expect(await bienTheoLoai('can_thue'), ['47C-10003', '47C-10004']);
+      expect((await danhSach()), hasLength(4), reason: 'không lọc thì thấy đủ');
+
+      final sai = await call('GET', '/api/tickets?direction=khong-co');
+      expect(sai.statusCode, 400, reason: 'loại lạ phải báo lỗi, không lọc nhầm ra phiếu nhập');
+    });
+
     test('tỷ lệ ngoài 0–100 thì bị từ chối', () async {
       final p = await lapPhieu();
       await post('/api/tickets/${p.id}', {'yield_ratio': 150}, expectStatus: 400);

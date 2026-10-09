@@ -4,7 +4,10 @@ import '../json_utils.dart';
 /// Chiều hàng: nhập kho (mua vào) hay xuất kho (bán ra).
 enum WeighDirection {
   nhap('nhap', 'Nhập kho'),
-  xuat('xuat', 'Xuất kho');
+  xuat('xuat', 'Xuất kho'),
+
+  /// Cân hộ xe của người khác: chỉ lấy số cân, không tính nhập hay xuất kho.
+  canThue('can_thue', 'Cân thuê');
 
   const WeighDirection(this.value, this.label);
 

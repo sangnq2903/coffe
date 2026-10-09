@@ -70,6 +70,14 @@ void main() {
       expect(restored.direction, original.direction);
     });
 
+    test('cân thuê giữ nguyên qua mã hoá/giải mã và có nhãn riêng', () {
+      final original = ticketWith(first: 21640, second: 9000, direction: WeighDirection.canThue);
+      final restored = WeighTicket.fromJson(original.toJson());
+      expect(restored.direction, WeighDirection.canThue);
+      expect(restored.direction.label, 'Cân thuê');
+      expect(original.toJson()['direction'], 'can_thue');
+    });
+
     test('giá trị lạ rơi về mặc định thay vì làm hỏng cả danh sách phiếu', () {
       final ticket = WeighTicket.fromJson({
         'id': 'x',

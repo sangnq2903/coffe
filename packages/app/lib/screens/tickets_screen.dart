@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/formatters.dart';
+import '../core/ticket_filter.dart';
 import '../core/theme.dart';
 import '../core/ticket_printer.dart';
 import '../state/data_refresh_controller.dart';
@@ -29,6 +30,7 @@ class _TicketsScreenState extends State<TicketsScreen> {
   List<WeighTicket> _tickets = const [];
   String? _stationFilter;
   TicketStatus? _statusFilter;
+  WeighDirection? _directionFilter;
   DateTimeRange? _range;
   bool _loading = false;
   String? _error;
@@ -65,6 +67,7 @@ class _TicketsScreenState extends State<TicketsScreen> {
       final list = await client.tickets(
         stationCode: _stationFilter,
         status: _statusFilter,
+        direction: _directionFilter,
         query: _searchController.text,
         from: _range?.start,
         // Chọn ngày chỉ cho ra 00:00; phải kéo tới cuối ngày, nếu không phiếu
@@ -75,7 +78,7 @@ class _TicketsScreenState extends State<TicketsScreen> {
         limit: 300,
       );
       if (!mounted) return;
-      setState(() => _tickets = list);
+      setState(() => _tickets = locTheoLoai(list, _directionFilter));
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
@@ -178,6 +181,23 @@ class _TicketsScreenState extends State<TicketsScreen> {
                   ],
                   onChanged: (value) {
                     setState(() => _statusFilter = value);
+                    _load();
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 190,
+                child: DropdownButtonFormField<WeighDirection?>(
+                  value: _directionFilter,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Loại phiếu'),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Tất cả loại')),
+                    ...WeighDirection.values
+                        .map((d) => DropdownMenuItem(value: d, child: Text(d.label))),
+                  ],
+                  onChanged: (value) {
+                    setState(() => _directionFilter = value);
                     _load();
                   },
                 ),

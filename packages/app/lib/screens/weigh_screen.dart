@@ -10,6 +10,7 @@ import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
 import '../core/formatters.dart';
+import '../core/ticket_filter.dart';
 import '../core/theme.dart';
 import '../core/ticket_printer.dart';
 import '../state/data_refresh_controller.dart';
@@ -63,11 +64,17 @@ class _WeighScreenState extends State<WeighScreen> {
   bool _messageIsError = false;
   Timer? _plateDebounce;
   Timer? _refreshTimer;
+  Timer? _timeTimer;
+
+  // Giờ cân tự điền theo đồng hồ cho tới khi người dùng tự gõ hoặc chọn giờ khác.
+  bool _firstAtManual = false;
+  bool _secondAtManual = false;
 
   // Bảng phiếu của bố cục máy tính: lọc theo ngày xem và ô tìm phiếu.
   List<WeighTicket> _tableList = const [];
   String? _selectedId;
   String _searchQuery = '';
+  WeighDirection? _directionFilter;
   late int _viewYear;
   late int _viewMonth;
   late int _viewDay;
@@ -90,6 +97,8 @@ class _WeighScreenState extends State<WeighScreen> {
     // cho trường hợp kênh tín hiệu chết mà không ai hay. Trước đây 10 giây một
     // lần vì đó là cách duy nhất biết máy khác vừa ghi gì.
     _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) => _loadTickets());
+    _timeTimer = Timer.periodic(const Duration(seconds: 15), (_) => _autoFillTimes());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillTimes());
   }
 
   /// Huỷ đăng ký nhận tín hiệu; gọi trong `dispose`.
@@ -99,6 +108,7 @@ class _WeighScreenState extends State<WeighScreen> {
   void dispose() {
     _huyLamMoi?.call();
     _refreshTimer?.cancel();
+    _timeTimer?.cancel();
     _plateDebounce?.cancel();
     _plateController.dispose();
     _customerController.dispose();
@@ -113,6 +123,13 @@ class _WeighScreenState extends State<WeighScreen> {
   }
 
   ServerConnection get _conn => context.read<ServerConnection>();
+
+  /// Máy chủ đang nối có lưu đúng loại phiếu này không (bản cũ lưu "cân thuê" thành "nhập").
+  bool _serverSupports(WeighDirection d) =>
+      _conn.serverInfo?.supportsDirection(d) ?? d != WeighDirection.canThue;
+
+  String _unsupportedHint(WeighDirection d) =>
+      'Máy chủ đang nối chưa hỗ trợ "${d.label}" — cần cập nhật phần mềm máy chủ.';
 
   Future<void> _loadAll() async {
     await Future.wait([_loadTickets(), _loadCatalogs()]);
@@ -171,13 +188,14 @@ class _WeighScreenState extends State<WeighScreen> {
     try {
       final list = await client.tickets(
         stationCode: _conn.stationCode,
+        direction: _directionFilter,
         query: _searchQuery,
         from: from,
         to: to.subtract(const Duration(milliseconds: 1)),
         limit: 500,
       );
       if (!mounted) return;
-      setState(() => _tableList = list);
+      setState(() => _tableList = locTheoLoai(list, _directionFilter));
     } on ApiException {
       // Giữ nguyên bảng đang hiển thị khi mạng chập chờn.
     }
@@ -228,8 +246,11 @@ class _WeighScreenState extends State<WeighScreen> {
       _noteController.text = ticket.note ?? '';
       _goodsType =
           _conn.goodsTypes.where((g) => g.id == ticket.goodsTypeId).firstOrNull;
+      _firstAtManual = false;
+      _secondAtManual = false;
       _message = null;
     });
+    _autoFillTimes();
   }
 
   void _clearForm() {
@@ -240,6 +261,8 @@ class _WeighScreenState extends State<WeighScreen> {
       _secondCtl.clear();
       _firstAtCtl.clear();
       _secondAtCtl.clear();
+      _firstAtManual = false;
+      _secondAtManual = false;
       _customer = null;
       _plateController.clear();
       _customerController.clear();
@@ -249,6 +272,7 @@ class _WeighScreenState extends State<WeighScreen> {
       _goodsType = _conn.goodsTypes.firstOrNull;
       _yieldController.text = formatDecimal(_goodsType?.defaultYieldRatio ?? 100);
     });
+    _autoFillTimes();
   }
 
   /// Số cân dùng để ghi vào phiếu: lấy từ đầu cân, hoặc từ ô nhập tay khi đầu
@@ -275,11 +299,13 @@ class _WeighScreenState extends State<WeighScreen> {
       _showMessage('Giờ cân lần 1 sai định dạng — gõ dd/mm/yyyy hh:mm.', isError: true);
       return;
     }
+    // Giờ tự điền chỉ để hiển thị; ghi giờ chính xác lúc bấm lưu (máy chủ lấy giờ hiện tại).
+    final firstAtToSend = _firstAtManual ? firstAt.value : null;
 
     setState(() => _saving = true);
     try {
       final ticket = await client.createTicket({
-        if (firstAt.value != null) 'first_weight_at': timeToMillis(firstAt.value),
+        if (firstAtToSend != null) 'first_weight_at': timeToMillis(firstAtToSend),
         'station_code': _conn.stationCode,
         'direction': _direction.value,
         'plate_no': _plateController.text,
@@ -292,8 +318,18 @@ class _WeighScreenState extends State<WeighScreen> {
         'note': _noteController.text,
         // Người lập phiếu do máy chủ điền từ tài khoản đang đăng nhập.
       });
+      _directionFilter = loaiLocSauKhiLuu(_directionFilter, ticket.direction);
+      final requested = _direction;
       _clearForm();
       await _loadTickets();
+      if (ticket.direction != requested) {
+        _showMessage(
+          'Phiếu ${ticket.ticketNo} bị máy chủ lưu thành "${ticket.direction.label}" thay vì '
+          '"${requested.label}" — cần cập nhật phần mềm máy chủ rồi sửa lại loại phiếu.',
+          isError: true,
+        );
+        return;
+      }
       _showMessage('Đã lưu cân lần 1 — phiếu ${ticket.ticketNo}, ${formatWeight(weight)} kg.');
     } on ApiException catch (e) {
       _showMessage(e.message, isError: true);
@@ -330,8 +366,9 @@ class _WeighScreenState extends State<WeighScreen> {
         ticket.id,
         weight,
         note: _noteController.text.isEmpty ? null : _noteController.text,
-        secondWeightAt: secondAt.value,
+        secondWeightAt: _secondAtManual ? secondAt.value : null,
       );
+      _directionFilter = loaiLocSauKhiLuu(_directionFilter, done.direction);
       _clearForm();
       await _loadTickets();
       if (!mounted) return;
@@ -432,9 +469,15 @@ class _WeighScreenState extends State<WeighScreen> {
               segments: WeighDirection.values
                   .map((d) => ButtonSegment(
                         value: d,
+                        enabled: _serverSupports(d),
+                        tooltip: _serverSupports(d) ? null : _unsupportedHint(d),
                         label: Text(d.label),
                         icon: Icon(
-                          d == WeighDirection.nhap ? Icons.south_west : Icons.north_east,
+                          switch (d) {
+                            WeighDirection.nhap => Icons.south_west,
+                            WeighDirection.xuat => Icons.north_east,
+                            WeighDirection.canThue => Icons.swap_vert,
+                          },
                           size: 17,
                         ),
                       ))
@@ -1025,9 +1068,15 @@ class _WeighScreenState extends State<WeighScreen> {
             ? 'SỐ ĐÃ ỔN ĐỊNH'
             : 'ĐANG DAO ĐỘNG';
 
-    Widget radio(WeighDirection d) => InkWell(
-          onTap: () => setState(() => _direction = d),
-          child: Row(
+    Widget radio(WeighDirection d) {
+      final supported = _serverSupports(d);
+      return Tooltip(
+        message: supported ? '' : _unsupportedHint(d),
+        child: InkWell(
+          onTap: supported ? () => setState(() => _direction = d) : null,
+          child: Opacity(
+            opacity: supported ? 1 : 0.45,
+            child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
@@ -1036,11 +1085,19 @@ class _WeighScreenState extends State<WeighScreen> {
                 color: AppTheme.primaryDark,
               ),
               const SizedBox(width: 6),
-              Text(d == WeighDirection.nhap ? 'Nhập' : 'Xuất',
+              Text(
+                  switch (d) {
+                    WeighDirection.nhap => 'Nhập',
+                    WeighDirection.xuat => 'Xuất',
+                    WeighDirection.canThue => 'Cân thuê',
+                  },
                   style: const TextStyle(fontSize: 17)),
             ],
           ),
-        );
+          ),
+        ),
+      );
+    }
 
     return _panel(
       child: Column(
@@ -1110,10 +1167,37 @@ class _WeighScreenState extends State<WeighScreen> {
             ),
           ),
           _dateGroup(),
+          _directionFilterGroup(),
         ],
       ),
     );
   }
+
+  /// Lọc bảng phiếu theo loại: nhập, xuất hay cân thuê.
+  Widget _directionFilterGroup() => _group(
+        'Loại phiếu',
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            for (final d in <WeighDirection?>[null, ...WeighDirection.values])
+              ChoiceChip(
+                label: Text(d == null ? 'Tất cả' : _directionShort(d)),
+                selected: _directionFilter == d,
+                onSelected: (_) {
+                  setState(() => _directionFilter = d);
+                  _loadTable();
+                },
+              ),
+          ],
+        ),
+      );
+
+  String _directionShort(WeighDirection d) => switch (d) {
+        WeighDirection.nhap => 'Nhập',
+        WeighDirection.xuat => 'Xuất',
+        WeighDirection.canThue => 'Cân thuê',
+      };
 
   Widget _dateGroup() {
     final days = DateUtils.getDaysInMonth(_viewYear, _viewMonth);
@@ -1253,6 +1337,17 @@ class _WeighScreenState extends State<WeighScreen> {
         _fmtDT(DateTime(date.year, date.month, date.day, time.hour, time.minute)));
   }
 
+  /// Điền sẵn giờ hiện tại vào ô giờ cân đang chờ ghi, trừ khi người dùng đã tự nhập.
+  void _autoFillTimes() {
+    if (!mounted || !_classic || _editTicket != null) return;
+    final now = _fmtDT(DateTime.now());
+    if (_pendingTicket == null) {
+      if (!_firstAtManual && _firstAtCtl.text != now) _firstAtCtl.text = now;
+    } else {
+      if (!_secondAtManual && _secondAtCtl.text != now) _secondAtCtl.text = now;
+    }
+  }
+
   void _fillWeights(WeighTicket t) {
     _firstCtl.text = t.firstWeight == null ? '' : formatDecimal(t.firstWeight!);
     _firstAtCtl.text = _fmtDT(t.firstWeightAt);
@@ -1352,8 +1447,18 @@ class _WeighScreenState extends State<WeighScreen> {
     setState(() => _saving = true);
     try {
       final done = await client.updateTicket(ticket.id, changes);
+      final requestedDirection = _direction;
+      _directionFilter = loaiLocSauKhiLuu(_directionFilter, done.direction);
       _clearForm();
       await _loadTickets();
+      if (done.direction != requestedDirection) {
+        _showMessage(
+          'Máy chủ lưu phiếu ${done.ticketNo} thành "${done.direction.label}" thay vì '
+          '"${requestedDirection.label}" — cần cập nhật phần mềm máy chủ.',
+          isError: true,
+        );
+        return;
+      }
       _showMessage('Đã cập nhật phiếu ${done.ticketNo} — KL hàng ${formatWeight(done.netWeight)} kg.');
     } on ApiException catch (e) {
       _showMessage(e.message, isError: true);
@@ -1386,7 +1491,8 @@ class _WeighScreenState extends State<WeighScreen> {
     );
   }
 
-  Widget _dtField(TextEditingController c, {bool enabled = true}) => TextFormField(
+  Widget _dtField(TextEditingController c, VoidCallback onUserEdit, {bool enabled = true}) =>
+      TextFormField(
         controller: c,
         enabled: enabled,
         style: const TextStyle(fontSize: 14),
@@ -1397,12 +1503,20 @@ class _WeighScreenState extends State<WeighScreen> {
             visualDensity: VisualDensity.compact,
             iconSize: 18,
             icon: const Icon(Icons.event),
-            onPressed: enabled ? () => _pickDT(c) : null,
+            onPressed: enabled
+                ? () async {
+                    await _pickDT(c);
+                    onUserEdit();
+                  }
+                : null,
           ),
         ),
         validator: (v) =>
             (v == null || v.trim().isEmpty || _parseDT(v) != null) ? null : 'Gõ dd/mm/yyyy hh:mm',
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) {
+          onUserEdit();
+          setState(() {});
+        },
       );
 
   Widget _classicFormPanel() {
@@ -1485,14 +1599,14 @@ class _WeighScreenState extends State<WeighScreen> {
                 Expanded(flex: 2, child: _weightField(_firstCtl, live)),
                 const SizedBox(width: 14),
                 _clbl('Giờ cân 1', w: 72),
-                Expanded(flex: 3, child: _dtField(_firstAtCtl)),
+                Expanded(flex: 3, child: _dtField(_firstAtCtl, () => _firstAtManual = true)),
               ]),
               _crow([
                 _clbl('Cân lần 2'),
                 Expanded(flex: 2, child: _weightField(_secondCtl, live, enabled: !isNew)),
                 const SizedBox(width: 14),
                 _clbl('Giờ cân 2', w: 72),
-                Expanded(flex: 3, child: _dtField(_secondAtCtl, enabled: !isNew)),
+                Expanded(flex: 3, child: _dtField(_secondAtCtl, () => _secondAtManual = true, enabled: !isNew)),
               ]),
               _crow([
                 _clbl('KL hàng'),
@@ -1556,8 +1670,9 @@ class _WeighScreenState extends State<WeighScreen> {
 
   Widget _classicTable() {
     const columns = <(String, int, bool)>[
-      ('NGÀY CÂN', 12, false),
+      ('NGÀY GIỜ CÂN', 16, false),
       ('SỐ PHIẾU', 19, false),
+      ('LOẠI', 8, false),
       ('SỐ XE', 14, false),
       ('KHÁCH HÀNG', 22, false),
       ('LOẠI HÀNG', 14, false),
@@ -1597,8 +1712,9 @@ class _WeighScreenState extends State<WeighScreen> {
       final selected = t.id == _selectedId;
       const dash = '—';
       final values = <String>[
-        formatDate(t.createdAt),
+        formatDateTime(t.firstWeightAt ?? t.createdAt),
         t.ticketNo,
+        _directionShort(t.direction),
         t.plateNo,
         t.customerName,
         t.goodsName,
@@ -1627,8 +1743,14 @@ class _WeighScreenState extends State<WeighScreen> {
                   values[i],
                   columns[i].$2,
                   right: columns[i].$3,
-                  bold: i == 2 || (i == 9 && !done),
-                  color: i == 9 && !done ? AppTheme.unstable : null,
+                  bold: i == 2 || i == 3 || (i == 10 && !done),
+                  color: i == 2
+                      ? switch (t.direction) {
+                          WeighDirection.nhap => AppTheme.stable,
+                          WeighDirection.xuat => AppTheme.accent,
+                          WeighDirection.canThue => const Color(0xFF1F5FBF),
+                        }
+                      : (i == 10 && !done ? AppTheme.unstable : null),
                 ),
             ],
           ),

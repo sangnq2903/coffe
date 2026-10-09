@@ -308,6 +308,7 @@ class Repository {
     String? stationCode,
     List<String>? allowedStations,
     TicketStatus? status,
+    WeighDirection? direction,
     String? query,
     DateTime? from,
     DateTime? to,
@@ -331,6 +332,10 @@ class Repository {
     if (status != null) {
       where.add('status = ?');
       args.add(status.value);
+    }
+    if (direction != null) {
+      where.add('direction = ?');
+      args.add(direction.value);
     }
     if (query != null && query.trim().isNotEmpty) {
       final like = '%${query.trim().toLowerCase()}%';
